@@ -1,0 +1,22 @@
+{
+  "name": "time-calculator",
+  "version": "1.0.0",
+  "description": "Calcolatore di tempi CNC",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "Mirko Capitanelli",
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.12.0"
+  },
+  "build": {
+    "appId": "com.mirkocapitanelli.timecalculator",
+    "productName": "Time Calculator",
+    "win": {
+      "target": "portable"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Time Calculator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Time Calculator - CNC ISO</h1>
+  <input type="file" id="fileInput" accept=".txt">
+  <br>
+  <label>Velocità rapido G0 (mm/min):</label>
+  <input type="number" id="velocitaG0" value="10000"><br>
+  <label>Avanzamento tipo:</label>
+  <select id="tipoAvanzamento">
+    <option value="mm/giro">mm/giro (F)</option>
+    <option value="mm/min">mm/min</option>
+  </select><br>
+  <div id="output"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
