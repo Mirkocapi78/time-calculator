@@ -31,7 +31,7 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v3
         with:
-          name: TimeCalculator-Windows
-          path: |
-            dist/*.exe
-            dist/win-unpacked/**
+        name: TimeCalculator-Windows
+        path:
+         - 'dist/*.exe'
+         - 'dist/win-unpacked/**'
