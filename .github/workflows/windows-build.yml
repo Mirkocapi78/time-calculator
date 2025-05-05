@@ -1,37 +1,7 @@
-name: Build and Release Windows EXE
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-jobs:
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install electron-builder
-        run: npm install --global electron-builder
-
-      - name: Build Windows executable
-        run: npm run dist
-
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v3
-        with:
-          name: TimeCalculator-Windows
-          path: |
-            dist/*.exe
-            dist/win-unpacked/**
+- name: Upload Windows installer
+  uses: actions/upload-artifact@v3
+  with:
+    name: TimeCalculator-Windows
+    path:
+      - 'dist/*.exe'
+      - 'dist/win-unpacked/**'
