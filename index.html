@@ -1,17 +1,39 @@
 <!DOCTYPE html>
 <html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Time Calculator CNC</title>
-</head>
+<head> … </head>
 <body>
   <h1>Time Calculator CNC</h1>
   <button id="openBtn">Apri file ISO</button>
   <p id="filePath"></p>
   <button id="calcBtn" disabled>Calcola Tempo</button>
   <h2>Tempo stimato: <span id="result">--</span> s</h2>
-  <script src="renderer.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const openBtn = document.getElementById('openBtn');
+      const calcBtn = document.getElementById('calcBtn');
+      const filePathP = document.getElementById('filePath');
+      const resultSpan = document.getElementById('result');
+      let currentFile = null;
+
+      openBtn.addEventListener('click', async () => {
+        try {
+          const path = await window.api.selectFile();
+          if (path) {
+            currentFile = path;
+            filePathP.textContent = path;
+            calcBtn.disabled = false;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      calcBtn.addEventListener('click', async () => {
+        if (!currentFile) return;
+        const sec = await window.api.calcTime(currentFile);
+        resultSpan.textContent = sec.toFixed(1);
+      });
+    });
+  </script>
 </body>
 </html>
