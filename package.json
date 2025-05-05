@@ -1,0 +1,25 @@
+{
+  "name": "time-calculator",
+  "version": "1.0.0",
+  "description": "Portable Windows app to calculate CNC ISO program time",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.capitanelli.timecalculator",
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "**/*"
+    ]
+  },
+  "dependencies": {
+    "electron": "^25.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^23.6.0"
+  }
+}
