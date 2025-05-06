@@ -147,4 +147,4 @@ function computeLatheTime(cmds, userMax = Infinity) {
   return tMin * 60;
 }
 
-module.exports = { parseISO, computeLatheTime }; = { parseISO, computeLatheTime };
+module.exports = { parseISO, computeLatheTime };
