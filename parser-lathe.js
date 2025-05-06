@@ -15,17 +15,24 @@ function parseISO(text) {
     const parts = line.toUpperCase().split(/\s+/);
     let token0 = parts[0];
 
-    // se il primo token è G-/M-code, aggiorna lo stato modale
-    if (/^[GM]\d+/.test(token0)) {
-      const c = token0.replace(/^G0([0-4])$/, 'G$1');   // G00→G0 ecc.
-      if (/^G0[1234]|^G[01234]/.test(c)) state.code     = c.replace('G00','G0').replace('G01','G1')
-                                                          .replace('G02','G2').replace('G03','G3')
-                                                          .replace('G04','G4');
-      else if (c === 'G94' || c === 'G95') state.feedMode = c;
-      else if (c === 'G96' || c === 'G97') state.speedMode = c;
-      else if (c === 'M3')                  state.speedMode = 'G97';
-      parts.shift();                       // rimuovi il codice dalla riga
-    }
+    // --- dentro for(…parts) ---
+if (/^[GM]\d+/.test(token0)) {
+  const c = token0.replace(/^G0([0-4])$/, 'G$1');
+  if (/^G0[1234]|^G[01234]/.test(c)) {
+    state.code = c.replace('G00','G0').replace('G01','G1')
+                  .replace('G02','G2').replace('G03','G3')
+                  .replace('G04','G4');
+    parts.shift();                    // togli il movimento
+  } else {
+    // ⬇️  qui gestiamo G26/G50/G92/G94/G95/G96/G97/M3
+    if (c === 'G94' || c === 'G95')       state.feedMode = c;
+    else if (c === 'G96' || c === 'G97')  state.speedMode = c;
+    else if (c === 'M03' || c === 'M3')   state.speedMode = 'G97';
+    // per G26/G50/G92 lasciamo il token nel blocco:
+    // non facciamo parts.shift() così cmd.code = 'G26' ecc.
+  }
+}
+
 
     // la riga eredita lo stato corrente
     const cmd = { code: state.code, feedMode: state.feedMode,
