@@ -60,17 +60,19 @@ function arcLen(x0,z0,c){
   return Math.abs(r*d);
 }
 
-function computeLatheTime(cmds){
-  const RAPID=10000;
-  let feedRev=0, rpm=0, Vc=0, rpmMax=4000;  // rpmMax default 4000
-  let pos={X:0,Z:0}, tMin=0;
+function computeLatheTime(cmds, userMax = Infinity) {
+  const RAPID = 10000;
+  let feedRev = 0, rpm = 0, Vc = 0;
+  let rpmMax = Math.min(userMax, 4000);   // 4000 default o valore utente
 
   for(const c of cmds){
     // valori modali
     if(c.F!=null) feedRev=c.F;
-    if(c.code==='G26'||c.code==='G50'||c.code==='G92') if(c.S!=null) rpmMax=c.S;
+    if (c.code === 'G26' || c.code === 'G50' || c.code === 'G92')
+    if (c.S != null) rpmMax = Math.min(userMax, c.S);
     if(c.code==='G97'||c.code==='M3') if(c.S!=null) rpm=Math.min(c.S,rpmMax);
     if(c.code==='G96' && c.S!=null) Vc=c.S;
+    rpm = Math.min(rpm, rpmMax); 
 
     // feedMode: se la riga ha token G94/G95 li abbiamo già salvati
 
