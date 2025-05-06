@@ -4,7 +4,7 @@
 <body>
   <h1>Time Calculator CNC</h1>
 
-  <label>
+<label>
   Giri mandrino MAX (solo per torni):
   <input type="number" id="rpmMax" value="4000" min="100" step="50">
 </label><br>
@@ -13,33 +13,35 @@
 <p id="filePath"></p>
 <button id="calcBtn" disabled>Calcola Tempo</button>
 <h2>Tempo stimato: <span id="result">--</span> s</h2>
-  <script>
-    window.addEventListener('DOMContentLoaded', () => {
-      const openBtn = document.getElementById('openBtn');
-      const calcBtn = document.getElementById('calcBtn');
-      const filePathP = document.getElementById('filePath');
-      const resultSpan = document.getElementById('result');
-      let currentFile = null;
 
-      openBtn.addEventListener('click', async () => {
-        try {
-          const path = await window.api.selectFile();
-          if (path) {
-            currentFile = path;
-            filePathP.textContent = path;
-            calcBtn.disabled = false;
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      });
+<!--  ▼ QUESTO È IL BLOCCO <script>  -->
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const openBtn   = document.getElementById('openBtn');
+  const calcBtn   = document.getElementById('calcBtn');
+  const filePathP = document.getElementById('filePath');
+  const resultSpan= document.getElementById('result');
+  const rpmInput  = document.getElementById('rpmMax');   // ★ nuovo
+  let currentFile = null;
 
-      calcBtn.addEventListener('click', async () => {
-        if (!currentFile) return;
-        const sec = await window.api.calcTime(currentFile);
-        resultSpan.textContent = sec.toFixed(1);
-      });
-    });
-  </script>
+  openBtn.addEventListener('click', async () => {
+    const path = await window.api.selectFile();
+    if (path) {
+      currentFile = path;
+      filePathP.textContent = path;
+      calcBtn.disabled = false;
+    }
+  });
+
+  calcBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+    const rpmMax = parseFloat(rpmInput.value) || 1e9;    // ★ nuovo
+    const sec = await window.api.calcTime(currentFile, rpmMax);
+    resultSpan.textContent = sec.toFixed(1);
+  });
+});
+</script>
+<!--  ▲ FINE BLOCCO SCRIPT -->
+
 </body>
 </html>
