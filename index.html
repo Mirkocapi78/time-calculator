@@ -3,6 +3,17 @@
 <head> … </head>
 <body>
   <h1>Time Calculator CNC</h1>
+
+  <label>
+  Giri mandrino MAX (solo per torni):
+  <input type="number" id="rpmMax" value="4000" min="100" step="50">
+</label><br>
+
+<button id="openBtn">Apri file ISO</button>
+<p id="filePath"></p>
+<button id="calcBtn" disabled>Calcola Tempo</button>
+<h2>Tempo stimato: <span id="result">--</span> s</h2>
+  
   <button id="openBtn">Apri file ISO</button>
   <p id="filePath"></p>
   <button id="calcBtn" disabled>Calcola Tempo</button>
