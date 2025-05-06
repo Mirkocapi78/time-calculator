@@ -26,10 +26,11 @@ ipcMain.handle('select-file', async () => {
   return filePaths[0];
 });
 
-ipcMain.handle('calculate-time', async (event, filepath) => {
+ipcMain.handle('calculate-time', async (event, { path, rpmMax }) => {
   const fs = require('fs');
-  const content = fs.readFileSync(filepath, 'utf8');
-  const commands = parser.parseISO(content);
-  const seconds = parser.computeLatheTime(commands);
+  const content = fs.readFileSync(path, 'utf8');
+  const cmds = parser.parseISO(content);
+  const seconds = parser.computeLatheTime(cmds, rpmMax);
   return seconds;
 });
+
