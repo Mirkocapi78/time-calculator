@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + implementazione C-axis per cutting
+// parser-lathe.js – parser completo + calcolo combinato asse C per G1
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -47,7 +47,7 @@ function parseISO(text) {
       parts.shift();
     }
     // C-axis ON (modalità fresatura)
-    if (/^M3?4$/.test(token0)) {
+    if (/^M3?[45]$/.test(token0)) {
       state.cAxis = true;
       effectiveCode = 'M34';
       parts.shift();
@@ -84,7 +84,7 @@ function parseISO(text) {
   return cmds;
 }
 
-/** 2) Calcola lunghezza di arco G2/G3 con I/K */
+/** 2) Calcola lunghezza di arco G2/G3 con I/K incrementali */
 function arcLen(x0, z0, cmd) {
   const xr0 = x0 / 2;
   const zr0 = z0;
@@ -114,8 +114,8 @@ function computeLatheTime(cmds, userMax = Infinity) {
     if (['G26','G50','G92'].includes(c.code) && c.S != null) rpmMax = Math.min(userMax, c.S);
     if (c.code === 'G97' && c.S != null) rpm = Math.min(c.S, rpmMax);
     if (c.code === 'G96' && c.S != null) Vc = c.S;
-    if (c.code === 'M34' || c.code === 'M35') cActive = true;
-    if (c.code === 'M5' || c.code === 'M05') cActive = false;
+    if (c.code === 'M34') cActive = true;
+    if (c.code === 'M5')  cActive = false;
 
     // Skip tool change
     if (c.L) continue;
@@ -130,9 +130,10 @@ function computeLatheTime(cmds, userMax = Infinity) {
 
     // Rapid moves
     if (c.code === 'G0') {
-      let dr = ((c.X ?? pos.X) - pos.X) / 2;
-      let dz = (c.Z ?? pos.Z) - pos.Z;
-      let dist = Math.hypot(dr, dz);
+      const dr   = ((c.X ?? pos.X) - pos.X) / 2;
+      const dz   = (c.Z ?? pos.Z) - pos.Z;
+      let dist  = Math.hypot(dr, dz);
+      // include C-axis rapid
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
         const dCdeg  = c.C - pos.C;
@@ -145,24 +146,23 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // Cutting moves G1, G2, G3 with C-axis combined
+    // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
-    let distC = 0;
-    if (cActive && c.C != null) {
-      const radius = (c.X ?? pos.X) / 2;
-      const dCdeg  = c.C - pos.C;
-      distC        = Math.abs(dCdeg * Math.PI/180 * radius);
-      pos.C        = c.C;
-    }
     let dist = 0;
     if (c.code === 'G1') {
+      // combine radial, axial, and circumferential in one path
+      let distC = 0;
+      if (cActive && c.C != null) {
+        const radius = (c.X ?? pos.X) / 2;
+        const dCdeg  = c.C - pos.C;
+        distC        = Math.abs(dCdeg * Math.PI/180 * radius);
+        pos.C        = c.C;
+      }
       dist = Math.hypot(dr, dz, distC);
     } else if (c.code === 'G2' || c.code === 'G3') {
-      // Arc movement ignores C-axis here
       dist = arcLen(pos.X, pos.Z, c);
     }
-
     if (dist > 0) {
       if (Vc && pos.X > 0) {
         const rpmCalc = (1000 * Vc) / (Math.PI * pos.X);
