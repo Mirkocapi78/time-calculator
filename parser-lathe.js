@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + gestione asse C (M34/M35) e X→raggio
+// parser-lathe.js – parser completo + implementazione C-axis per cutting
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -12,13 +12,14 @@ function parseISO(text) {
     const token0 = parts[0];
     let effectiveCode = state.code;
 
-    // Movimento modale G0–G4
-    if (/^G00$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
-      effectiveCode = token0.replace(/^G00$/, 'G0')
-                           .replace(/^G01$/, 'G1')
-                           .replace(/^G02$/, 'G2')
-                           .replace(/^G03$/, 'G3')
-                           .replace(/^G04$/, 'G4');
+    // Movimenti modali G0–G4
+    if (/^G0?0$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
+      effectiveCode = token0
+        .replace(/^G00$/, 'G0')
+        .replace(/^G01$/, 'G1')
+        .replace(/^G02$/, 'G2')
+        .replace(/^G03$/, 'G3')
+        .replace(/^G04$/, 'G4');
       state.code = effectiveCode;
       parts.shift();
     }
@@ -28,7 +29,7 @@ function parseISO(text) {
       parts.shift();
     }
     // RPM limits G26/G50/G92
-    else if (/^G26$|^G50$|^G92$/.test(token0)) {
+    else if (/^G2[692]$|^G50$/.test(token0)) {
       effectiveCode = token0;
     }
     // Cutting speed G96
@@ -36,7 +37,7 @@ function parseISO(text) {
       effectiveCode = 'G96';
     }
     // Constant RPM G97/M3
-    else if (/^G97$|^M03$|^M3$/.test(token0)) {
+    else if (/^G97$|^M0?3$/.test(token0)) {
       effectiveCode = 'G97';
     }
     // Dwell G4/G04
@@ -45,14 +46,14 @@ function parseISO(text) {
       state.code = 'G4';
       parts.shift();
     }
-    // C-axis ON: M34 or M35
-    if (/^M34$|^M35$/.test(token0)) {
+    // C-axis ON (modalità fresatura)
+    if (/^M3?4$/.test(token0)) {
       state.cAxis = true;
       effectiveCode = 'M34';
       parts.shift();
     }
-    // Spindle OFF (also disables C-axis)
-    if (/^M05$|^M5$/.test(token0)) {
+    // Spindle OFF disabilita C-axis
+    if (/^M0?5$/.test(token0)) {
       state.cAxis = false;
       effectiveCode = 'M5';
       parts.shift();
@@ -83,7 +84,7 @@ function parseISO(text) {
   return cmds;
 }
 
-/** 2) Lunghezza arco G2/G3 con I/K increm. e C-axis arc */
+/** 2) Calcola lunghezza di arco G2/G3 con I/K */
 function arcLen(x0, z0, cmd) {
   const xr0 = x0 / 2;
   const zr0 = z0;
@@ -98,7 +99,7 @@ function arcLen(x0, z0, cmd) {
   return Math.abs(r * dθ);
 }
 
-/** 3) CALCOLO TEMPO → ritorna secondi totali */
+/** 3) Calcolo tempo totale (in secondi) */
 function computeLatheTime(cmds, userMax = Infinity) {
   const RAPID = 10000;
   let pos = { X: 0, Z: 0, C: 0 };
@@ -108,22 +109,18 @@ function computeLatheTime(cmds, userMax = Infinity) {
   let cActive = false;
 
   for (const c of cmds) {
-    // aggiornamenti modali
+    // Modal updates
     if (c.F != null) feedRev = c.F;
-    if (['G26','G50','G92'].includes(c.code) && c.S != null) {
-      rpmMax = Math.min(userMax, c.S);
-    }
+    if (['G26','G50','G92'].includes(c.code) && c.S != null) rpmMax = Math.min(userMax, c.S);
     if (c.code === 'G97' && c.S != null) rpm = Math.min(c.S, rpmMax);
     if (c.code === 'G96' && c.S != null) Vc = c.S;
+    if (c.code === 'M34' || c.code === 'M35') cActive = true;
+    if (c.code === 'M5' || c.code === 'M05') cActive = false;
 
-    // gestione C-axis on/off
-    if (c.code === 'M34') cActive = true;
-    if (c.code === 'M5')  cActive = false;
-
-    // skip cambio utensile
+    // Skip tool change
     if (c.L) continue;
 
-    // dwell G4
+    // Dwell
     if (c.code === 'G4') {
       const sec = c.X ?? c.F ?? c.P ?? 0;
       tMin += sec / 60;
@@ -131,16 +128,14 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // rapid G0 (include X/Z and C-axis if active)
+    // Rapid moves
     if (c.code === 'G0') {
-      // radial/axial rapid
-      const dr = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz = (c.Z ?? pos.Z) - pos.Z;
+      let dr = ((c.X ?? pos.X) - pos.X) / 2;
+      let dz = (c.Z ?? pos.Z) - pos.Z;
       let dist = Math.hypot(dr, dz);
-      // C-axis rapid
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
-        const dCdeg  = (c.C - pos.C);
+        const dCdeg  = c.C - pos.C;
         const distC  = Math.abs(dCdeg * Math.PI/180 * radius);
         dist += distC;
         pos.C = c.C;
@@ -150,25 +145,24 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // C-axis move
+    // Cutting moves G1, G2, G3 with C-axis combined
+    let dr = ((c.X ?? pos.X) - pos.X) / 2;
+    let dz = (c.Z ?? pos.Z) - pos.Z;
+    let distC = 0;
     if (cActive && c.C != null) {
       const radius = (c.X ?? pos.X) / 2;
-      const dCdeg  = (c.C - pos.C);
-      const distC  = Math.abs(dCdeg * Math.PI/180 * radius);
-      const feedC  = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
-      if (feedC > 0) tMin += distC / feedC;
-      pos.C = c.C;
+      const dCdeg  = c.C - pos.C;
+      distC        = Math.abs(dCdeg * Math.PI/180 * radius);
+      pos.C        = c.C;
     }
-
-    // cutting moves G1/G2/G3
     let dist = 0;
     if (c.code === 'G1') {
-      const dr = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz = (c.Z ?? pos.Z) - pos.Z;
-      dist = Math.hypot(dr, dz);
+      dist = Math.hypot(dr, dz, distC);
     } else if (c.code === 'G2' || c.code === 'G3') {
+      // Arc movement ignores C-axis here
       dist = arcLen(pos.X, pos.Z, c);
     }
+
     if (dist > 0) {
       if (Vc && pos.X > 0) {
         const rpmCalc = (1000 * Vc) / (Math.PI * pos.X);
@@ -178,7 +172,8 @@ function computeLatheTime(cmds, userMax = Infinity) {
       if (feedMMmin > 0) tMin += dist / feedMMmin;
     }
 
-    pos = { X: c.X ?? pos.X, Z: c.Z ?? pos.Z, C: pos.C };
+    pos.X = c.X ?? pos.X;
+    pos.Z = c.Z ?? pos.Z;
   }
 
   return tMin * 60;
