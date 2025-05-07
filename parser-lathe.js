@@ -157,15 +157,36 @@ if (c.code === 'G76') {
     const axialDist = Math.abs((c.Z ?? pos.Z) - pos.Z);
     if (feedMMmin > 0) tMin += axialDist / feedMMmin;
   }
-  else if (g76Count === 2) {
-    // Secondo G76: P = profondità totale (µm), Q = passo profondità (µm)
-    const axialDist   = Math.abs((c.Z ?? pos.Z) - pos.Z);
-    const totalDepth  = (c.P ?? 0) / 1000;        // mm
-    const stepDepth   = (c.Q ?? totalDepth*1000) / 1000;  // mm
-    const passes      = Math.ceil(totalDepth / stepDepth);
-    // tempo = numero passate * (spostamento assiale / feed)
-    if (feedMMmin > 0) tMin += (axialDist * passes) / feedMMmin;
+ 
+// Espansione avanzata G76 (sostituire il blocco g76Count===2)
+else if (g76Count === 2) {
+  // Parametri
+  const startZ    = g76StartZ;                 // registrato al primo G76
+  const endZ      = c.Z ?? pos.Z;
+  const axialDist = Math.abs(endZ - startZ);   // mm
+  const pitch     = c.F ?? feedRev;            // mm/rev
+  const diameter  = c.X ?? (pos.X || 0);       // mm
+  const radius    = diameter / 2;              // mm
+
+  // Numero di passate (P e Q in µm → mm)
+  const totalDepth = (c.P ?? 0) / 1000;        // mm
+  const stepDepth  = (c.Q ?? 0) / 1000;        // mm
+  const passes     = Math.ceil(totalDepth / stepDepth);
+
+  // Calcolo lunghezza elicoidale di una singola passata:
+  // turns = spostamento assiale / passo
+  const turns    = axialDist / pitch;
+  // lunghezza elica = sqrt(axial^2 + (circonferenza*turns)^2)
+  const circLen  = 2 * Math.PI * radius * turns;
+  const helixLen = Math.hypot(axialDist, circLen);
+
+  // Tempo totale per tutte le passate
+  // feedMMmin già definito sopra come:
+  //   const feedMMmin = (c.feedMode==='G95') ? feedRev*rpm : feedRev;
+  if (feedMMmin > 0) {
+    tMin += (helixLen * passes) / feedMMmin;
   }
+}
 
   // aggiorna Z
   pos.Z = c.Z ?? pos.Z;
