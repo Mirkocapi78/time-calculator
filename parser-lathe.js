@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + calcolo combinato asse C per G1
+// parser-lathe.js – parser completo + espansione G76 in computeLatheTime
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -63,19 +63,19 @@ function parseISO(text) {
       code:     effectiveCode,
       feedMode: state.feedMode,
       X: null, Z: null, I: null, K: null,
-      F: null, S: null, P: null, L: null,
+      F: null, S: null, P: null, Q: null, R: null, L: null,
       C: null
     };
     for (const p of parts) {
       const k = p[0], v = parseFloat(p.slice(1));
       if (isNaN(v)) continue;
-      if (k === 'X') cmd.X = v;
+      if (['P','Q','R'].includes(k)) cmd[k] = v;
+      else if (k === 'X') cmd.X = v;
       else if (k === 'Z') cmd.Z = v;
       else if (k === 'I') cmd.I = v;
       else if (k === 'K') cmd.K = v;
       else if (k === 'F') cmd.F = v;
       else if (k === 'S') cmd.S = v;
-      else if (k === 'P') cmd.P = v;
       else if (k === 'L') cmd.L = v;
       else if (k === 'C') cmd.C = v;
     }
@@ -84,7 +84,7 @@ function parseISO(text) {
   return cmds;
 }
 
-/** 2) Calcola lunghezza di arco G2/G3 con I/K incrementali */
+/** 2) Arc length for G2/G3 */
 function arcLen(x0, z0, cmd) {
   const xr0 = x0 / 2;
   const zr0 = z0;
@@ -93,13 +93,13 @@ function arcLen(x0, z0, cmd) {
   const r   = Math.hypot(xr0 - xc, zr0 - zc);
   const xr1 = (cmd.X ?? x0) / 2;
   const zr1 = cmd.Z ?? z0;
-  let dθ   = Math.atan2(zr1 - zc, xr1 - xc) - Math.atan2(zr0 - zc, xr0 - xc);
+  let dθ = Math.atan2(zr1 - zc, xr1 - xc) - Math.atan2(zr0 - zc, xr0 - xc);
   if (cmd.code === 'G2' && dθ > 0) dθ -= 2 * Math.PI;
   if (cmd.code === 'G3' && dθ < 0) dθ += 2 * Math.PI;
   return Math.abs(r * dθ);
 }
 
-/** 3) Calcolo tempo totale (in secondi) */
+/** 3) Calculate total time (s), includes expansion of G76 cycles */
 function computeLatheTime(cmds, userMax = Infinity) {
   const RAPID = 10000;
   let pos = { X: 0, Z: 0, C: 0 };
@@ -120,7 +120,7 @@ function computeLatheTime(cmds, userMax = Infinity) {
     // Skip tool change
     if (c.L) continue;
 
-    // Dwell
+    // Dwell G4
     if (c.code === 'G4') {
       const sec = c.X ?? c.F ?? c.P ?? 0;
       tMin += sec / 60;
@@ -128,12 +128,11 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // Rapid moves
+    // Rapid moves G0
     if (c.code === 'G0') {
-      const dr   = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz   = (c.Z ?? pos.Z) - pos.Z;
-      let dist  = Math.hypot(dr, dz);
-      // include C-axis rapid
+      const dr = ((c.X ?? pos.X) - pos.X) / 2;
+      const dz = (c.Z ?? pos.Z) - pos.Z;
+      let dist = Math.hypot(dr, dz);
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
         const dCdeg  = c.C - pos.C;
@@ -146,12 +145,32 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
+    // Expand G76 thread cycle
+    if (c.code === 'G76') {
+      // axial thread depth cycle
+      const startZ      = pos.Z;
+      const totalDepth  = Math.abs(c.Z - startZ);
+      const initDepth   = c.P ?? totalDepth;
+      const stepDepth   = c.Q ?? totalDepth;
+      const feedMMmin   = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
+      let depths = [];
+      // build depths
+      for (let d = initDepth; d < totalDepth; d += stepDepth) depths.push(d);
+      depths.push(totalDepth);
+      // simulate each pass
+      for (const d of depths) {
+        if (feedMMmin > 0) tMin += (d / feedMMmin);
+      }
+      // update Z to final
+      pos.Z = c.Z;
+      continue;
+    }
+
     // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
     let dist = 0;
     if (c.code === 'G1') {
-      // combine radial, axial, and circumferential in one path
       let distC = 0;
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
@@ -166,7 +185,7 @@ function computeLatheTime(cmds, userMax = Infinity) {
     if (dist > 0) {
       if (Vc && pos.X > 0) {
         const rpmCalc = (1000 * Vc) / (Math.PI * pos.X);
-        rpm = Math.min(rpmCalc, rpmMax);
+        rpm           = Math.min(rpmCalc, rpmMax);
       }
       const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
       if (feedMMmin > 0) tMin += dist / feedMMmin;
