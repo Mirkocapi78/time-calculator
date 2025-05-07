@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + espansione G76 in computeLatheTime
+// parser-lathe.js – parser completo + gestione avanzata G76
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -13,7 +13,7 @@ function parseISO(text) {
     let effectiveCode = state.code;
 
     // Movimenti modali G0–G4
-    if (/^G0?0$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
+    if (/^G00$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
       effectiveCode = token0
         .replace(/^G00$/, 'G0')
         .replace(/^G01$/, 'G1')
@@ -29,7 +29,7 @@ function parseISO(text) {
       parts.shift();
     }
     // RPM limits G26/G50/G92
-    else if (/^G2[692]$|^G50$/.test(token0)) {
+    else if (/^G26$|^G50$|^G92$/.test(token0)) {
       effectiveCode = token0;
     }
     // Cutting speed G96
@@ -37,7 +37,7 @@ function parseISO(text) {
       effectiveCode = 'G96';
     }
     // Constant RPM G97/M3
-    else if (/^G97$|^M0?3$/.test(token0)) {
+    else if (/^G97$|^M03$|^M3$/.test(token0)) {
       effectiveCode = 'G97';
     }
     // Dwell G4/G04
@@ -47,13 +47,13 @@ function parseISO(text) {
       parts.shift();
     }
     // C-axis ON (modalità fresatura)
-    if (/^M3?[45]$/.test(token0)) {
+    if (/^M34$|^M35$/.test(token0)) {
       state.cAxis = true;
       effectiveCode = 'M34';
       parts.shift();
     }
     // Spindle OFF disabilita C-axis
-    if (/^M0?5$/.test(token0)) {
+    if (/^M05$|^M5$/.test(token0)) {
       state.cAxis = false;
       effectiveCode = 'M5';
       parts.shift();
@@ -86,116 +86,84 @@ function parseISO(text) {
 
 /** 2) Arc length for G2/G3 */
 function arcLen(x0, z0, cmd) {
-  const xr0 = x0 / 2;
-  const zr0 = z0;
-  const xc  = xr0 + (cmd.I ?? 0) / 2;
+  const xr0 = x0/2, zr0 = z0;
+  const xc  = xr0 + (cmd.I ?? 0)/2;
   const zc  = zr0 + (cmd.K ?? 0);
-  const r   = Math.hypot(xr0 - xc, zr0 - zc);
-  const xr1 = (cmd.X ?? x0) / 2;
-  const zr1 = cmd.Z ?? z0;
-  let dθ = Math.atan2(zr1 - zc, xr1 - xc) - Math.atan2(zr0 - zc, xr0 - xc);
-  if (cmd.code === 'G2' && dθ > 0) dθ -= 2 * Math.PI;
-  if (cmd.code === 'G3' && dθ < 0) dθ += 2 * Math.PI;
-  return Math.abs(r * dθ);
+  const r   = Math.hypot(xr0-xc, zr0-zc);
+  const xr1 = (cmd.X ?? x0)/2, zr1 = cmd.Z ?? z0;
+  let dθ   = Math.atan2(zr1-zc, xr1-xc) - Math.atan2(zr0-zc, xr0-xc);
+  if (cmd.code==='G2' && dθ>0) dθ -= 2*Math.PI;
+  if (cmd.code==='G3' && dθ<0) dθ += 2*Math.PI;
+  return Math.abs(r*dθ);
 }
 
-/** 3) Calculate total time (s), includes expansion of G76 cycles */
-function computeLatheTime(cmds, userMax = Infinity) {
-  const RAPID = 10000;
-  let pos = { X: 0, Z: 0, C: 0 };
-  let feedRev = 0, rpm = 0, Vc = 0;
-  let rpmMax = Math.min(userMax, 4000);
-  let tMin = 0;
-  let cActive = false;
+/** 3) Calcolo tempo totale (secondi) con espansione G76 avanzata */
+function computeLatheTime(cmds, userMax=Infinity) {
+  const RAPID=10000;
+  let pos={X:0,Z:0,C:0}, feedRev=0, rpm=0, Vc=0, rpmMax=Math.min(userMax,4000), tMin=0;
+  let g76Count=0;
+  
+  for(const c of cmds) {
+    // modals
+    if(c.F!=null) feedRev=c.F;
+    if(['G26','G50','G92'].includes(c.code)&&c.S!=null) rpmMax=Math.min(userMax,c.S);
+    if(c.code==='G97'&&c.S!=null) rpm=Math.min(c.S,rpmMax);
+    if(c.code==='G96'&&c.S!=null) Vc=c.S;
+    
+    // C-axis on/off
+    let cActive=false; // not used here
+    
+    // tool change skip
+    if(c.L) continue;
 
-  for (const c of cmds) {
-    // Modal updates
-    if (c.F != null) feedRev = c.F;
-    if (['G26','G50','G92'].includes(c.code) && c.S != null) rpmMax = Math.min(userMax, c.S);
-    if (c.code === 'G97' && c.S != null) rpm = Math.min(c.S, rpmMax);
-    if (c.code === 'G96' && c.S != null) Vc = c.S;
-    if (c.code === 'M34') cActive = true;
-    if (c.code === 'M5')  cActive = false;
-
-    // Skip tool change
-    if (c.L) continue;
-
-    // Dwell G4
-    if (c.code === 'G4') {
-      const sec = c.X ?? c.F ?? c.P ?? 0;
-      tMin += sec / 60;
-      pos = { X: c.X ?? pos.X, Z: c.Z ?? pos.Z, C: pos.C };
-      continue;
+    // dwell
+    if(c.code==='G4'){
+      const sec=c.X??c.F??c.P??0; tMin+=sec/60;
+      pos={X:c.X??pos.X,Z:c.Z??pos.Z,C:pos.C}; continue;
     }
-
-    // Rapid moves G0
-    if (c.code === 'G0') {
-      const dr = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz = (c.Z ?? pos.Z) - pos.Z;
-      let dist = Math.hypot(dr, dz);
-      if (cActive && c.C != null) {
-        const radius = (c.X ?? pos.X) / 2;
-        const dCdeg  = c.C - pos.C;
-        const distC  = Math.abs(dCdeg * Math.PI/180 * radius);
-        dist += distC;
-        pos.C = c.C;
+    // rapid
+    if(c.code==='G0'){
+      const dr=((c.X??pos.X)-pos.X)/2;
+      const dz=(c.Z??pos.Z)-pos.Z;
+      let dist=Math.hypot(dr,dz);
+      tMin+=dist/RAPID;
+      pos={X:c.X??pos.X,Z:c.Z??pos.Z,C:pos.C}; continue;
+    }
+    
+    // G76 cycle expansion
+    if(c.code==='G76'){
+      g76Count++;
+      if(g76Count===1){
+        // first G76: Q = last finishing pass depth
+        const depth=c.Q||0;
+        const feedMMmin=(c.feedMode==='G95')?feedRev*rpm:feedRev;
+        if(feedMMmin>0) tMin+=depth/feedMMmin;
+      } else if(g76Count===2){
+        // second G76: P = total thread depth, Q = increment, F = pitch(mm/rev)
+        const total=c.P||0; const step=c.Q||total; const pitch=c.F||feedRev;
+        const passes=Math.ceil(total/step);
+        const feedMMmin=(c.feedMode==='G95')?feedRev*rpm:feedRev;
+        for(let i=1;i<=passes;i++){
+          const d=Math.min(i*step,total);
+          if(feedMMmin>0) tMin+=d/feedMMmin;
+        }
       }
-      tMin += dist / RAPID;
-      pos = { X: c.X ?? pos.X, Z: c.Z ?? pos.Z, C: pos.C };
-      continue;
+      pos.Z=c.Z??pos.Z; continue;
     }
-
-    // Expand G76 thread cycle
-    if (c.code === 'G76') {
-      // axial thread depth cycle
-      const startZ      = pos.Z;
-      const totalDepth  = Math.abs(c.Z - startZ);
-      const initDepth   = c.P ?? totalDepth;
-      const stepDepth   = c.Q ?? totalDepth;
-      const feedMMmin   = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
-      let depths = [];
-      // build depths
-      for (let d = initDepth; d < totalDepth; d += stepDepth) depths.push(d);
-      depths.push(totalDepth);
-      // simulate each pass
-      for (const d of depths) {
-        if (feedMMmin > 0) tMin += (d / feedMMmin);
-      }
-      // update Z to final
-      pos.Z = c.Z;
-      continue;
+    
+    // cutting moves G1/G2/G3
+    let dr=((c.X??pos.X)-pos.X)/2, dz=(c.Z??pos.Z)-pos.Z;
+    let dist=0;
+    if(c.code==='G1') dist=Math.hypot(dr,dz);
+    else if(c.code==='G2'||c.code==='G3') dist=arcLen(pos.X,pos.Z,c);
+    if(dist>0){
+      if(Vc&&pos.X>0){const rpmCalc=(1000*Vc)/(Math.PI*pos.X); rpm=Math.min(rpmCalc,rpmMax);}
+      const feedMMmin=(c.feedMode==='G95')?feedRev*rpm:feedRev;
+      if(feedMMmin>0) tMin+=dist/feedMMmin;
     }
-
-    // Cutting moves G1, G2, G3
-    let dr = ((c.X ?? pos.X) - pos.X) / 2;
-    let dz = (c.Z ?? pos.Z) - pos.Z;
-    let dist = 0;
-    if (c.code === 'G1') {
-      let distC = 0;
-      if (cActive && c.C != null) {
-        const radius = (c.X ?? pos.X) / 2;
-        const dCdeg  = c.C - pos.C;
-        distC        = Math.abs(dCdeg * Math.PI/180 * radius);
-        pos.C        = c.C;
-      }
-      dist = Math.hypot(dr, dz, distC);
-    } else if (c.code === 'G2' || c.code === 'G3') {
-      dist = arcLen(pos.X, pos.Z, c);
-    }
-    if (dist > 0) {
-      if (Vc && pos.X > 0) {
-        const rpmCalc = (1000 * Vc) / (Math.PI * pos.X);
-        rpm           = Math.min(rpmCalc, rpmMax);
-      }
-      const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
-      if (feedMMmin > 0) tMin += dist / feedMMmin;
-    }
-
-    pos.X = c.X ?? pos.X;
-    pos.Z = c.Z ?? pos.Z;
+    pos.X=c.X??pos.X; pos.Z=c.Z??pos.Z;
   }
-
-  return tMin * 60;
+  return tMin*60;
 }
 
-module.exports = { parseISO, computeLatheTime };
+module.exports={parseISO,computeLatheTime};
