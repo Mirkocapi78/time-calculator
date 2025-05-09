@@ -28,10 +28,16 @@ function parseISO(text) {
       state.feedMode = token0;
       parts.shift();
     }
-    // RPM limits G26/G50/G92
-    else if (/^G2[692]$|^G50$/.test(token0)) {
-      effectiveCode = token0;
-    }
+
+      
+   // RPM limits G26/G50/G92 **e** threading cycle G76
+   else if (/^(?:G26|G50|G92|G76)$/i.test(token0)) {
+     effectiveCode = token0;
+     parts.shift();
+   }
+
+
+      
     // Cutting speed G96
     else if (/^G96$/.test(token0)) {
       effectiveCode = 'G96';
@@ -59,13 +65,19 @@ function parseISO(text) {
       parts.shift();
     }
 
+
+
+    
     const cmd = {
       code:     effectiveCode,
       feedMode: state.feedMode,
       X: null, Z: null, I: null, K: null,
-      F: null, S: null, P: null, L: null,
+      F: null, S: null, P: null, Q: null, L: null,
       C: null
     };
+
+
+    
     for (const p of parts) {
       const k = p[0], v = parseFloat(p.slice(1));
       if (isNaN(v)) continue;
@@ -76,6 +88,7 @@ function parseISO(text) {
       else if (k === 'F') cmd.F = v;
       else if (k === 'S') cmd.S = v;
       else if (k === 'P') cmd.P = v;
+      else if (k === 'Q') cmd.Q = v;
       else if (k === 'L') cmd.L = v;
       else if (k === 'C') cmd.C = v;
     }
@@ -107,6 +120,16 @@ function computeLatheTime(cmds, userMax = Infinity) {
   let rpmMax = Math.min(userMax, 4000);
   let tMin = 0;
   let cActive = false;
+
+
+
+  let g76Count       = 0;
+  let g76StartZ      = 0;
+  let g76FinishDepth = 0;
+
+
+
+  
 
   for (const c of cmds) {
     // Modal updates
@@ -146,52 +169,48 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-// Espansione avanzata G76
+
+
+
+
+// ——— Gestione threading cycle G76 ———
 if (c.code === 'G76') {
   g76Count++;
-  // feed in mm/min (G94/G95 già gestiti in feedRev e rpm)
+  // calcola feed in mm/min
   const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
+  if (feedMMmin <= 0) console.warn('⚠️ G76 senza feed!', feedRev, rpm);
 
   if (g76Count === 1) {
-    // Primo G76: passata singola lungo l’asse Z
-    const axialDist = Math.abs((c.Z ?? pos.Z) - pos.Z);
-    if (feedMMmin > 0) tMin += axialDist / feedMMmin;
+    // memorizza Z di partenza e ultimo Ø di finitura (Q1 in µm)
+    g76StartZ      = pos.Z;
+    g76FinishDepth = (c.Q ?? 0) / 1000;
   }
- 
-// Espansione avanzata G76 (sostituire il blocco g76Count===2)
-else if (g76Count === 2) {
-  // Parametri
-  const startZ    = g76StartZ;                 // registrato al primo G76
-  const endZ      = c.Z ?? pos.Z;
-  const axialDist = Math.abs(endZ - startZ);   // mm
-  const pitch     = c.F ?? feedRev;            // mm/rev
-  const diameter  = c.X ?? (pos.X || 0);       // mm
-  const radius    = diameter / 2;              // mm
+  else if (g76Count === 2) {
+    // totalDepth e passo per rough in mm
+    const totalDepth = (c.P ?? 0) / 1000;
+    const stepDepth  = (c.Q ?? 0) / 1000;
+    const roughDepth = Math.max(0, totalDepth - g76FinishDepth);
+    const roughPasses= Math.ceil(roughDepth / stepDepth);
+    const passes     = roughPasses + 1;  // +1 per la finitura
 
-  // Numero di passate (P e Q in µm → mm)
-  const totalDepth = (c.P ?? 0) / 1000;        // mm
-  const stepDepth  = (c.Q ?? 0) / 1000;        // mm
-  const passes     = Math.ceil(totalDepth / stepDepth);
+    // corsa assiale (da startZ a Z finale del 2° G76)
+    const axialDist = Math.abs((c.Z ?? pos.Z) - g76StartZ);
 
-  // Calcolo lunghezza elicoidale di una singola passata:
-  // turns = spostamento assiale / passo
-  const turns    = axialDist / pitch;
-  // lunghezza elica = sqrt(axial^2 + (circonferenza*turns)^2)
-  const circLen  = 2 * Math.PI * radius * turns;
-  const helixLen = Math.hypot(axialDist, circLen);
-
-  // Tempo totale per tutte le passate
-  // feedMMmin già definito sopra come:
-  //   const feedMMmin = (c.feedMode==='G95') ? feedRev*rpm : feedRev;
-  if (feedMMmin > 0) {
-    tMin += (helixLen * passes) / feedMMmin;
+    // aggiunge tempo totale
+    if (feedMMmin > 0) {
+      tMin += (axialDist * passes) / feedMMmin;
+    }
   }
-}
 
-  // aggiorna Z
+  // aggiorna pos.Z e salta il resto del loop
   pos.Z = c.Z ?? pos.Z;
   continue;
 }
+
+
+
+
+    
     // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
