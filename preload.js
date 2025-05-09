@@ -1,10 +1,12 @@
-// preload.js  – bridge sicuro renderer ↔ main
+// preload.js
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  selectFile: () => ipcRenderer.invoke('select-file'),
-
-  // accetta path + limite giri (rpmMax)
-  calcTime:  (path, rpmMax) =>
-    ipcRenderer.invoke('calculate-time', { path, rpmMax })
+  // Apre la finestra di dialogo e restituisce il percorso del file
+  selectFile: () => ipcRenderer.invoke('show-open-dialog'),
+  // Legge il contenuto del file come testo
+  readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
+  // Calcola il tempo: text = contenuto ISO, mode = 'lathe'|'mill', rpmMax = numero
+  calcTime: ({ text, mode, rpmMax }) =>
+    ipcRenderer.invoke('calc-time', { text, mode, rpmMax })
 });
