@@ -108,6 +108,11 @@ function computeLatheTime(cmds, userMax = Infinity) {
   let tMin = 0;
   let cActive = false;
 
+  // ——— Variabili per G76 ———
+  let g76Count       = 0;
+  let g76StartZ      = 0;
+  let g76FinishDepth = 0;
+  
   for (const c of cmds) {
     // Modal updates
     if (c.F != null) feedRev = c.F;
@@ -145,10 +150,6 @@ function computeLatheTime(cmds, userMax = Infinity) {
       pos = { X: c.X ?? pos.X, Z: c.Z ?? pos.Z, C: pos.C };
       continue;
     }
-
-let g76Count = 0;
-let g76StartZ = 0;
-let g76FinishDepth = 0;
 
 // ——— Gestione avanzata G76 ———
 if (c.code === 'G76') {
