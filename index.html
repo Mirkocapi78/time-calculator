@@ -45,10 +45,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   calcBtn.addEventListener('click', async () => {
     if (!currentFile) return;
-    const rpmMax = parseFloat(rpmInput.value) || 1e9;    // ★ nuovo
-    const sec = await window.api.calcTime(currentFile, rpmMax);
+    const rpmMax = parseFloat(rpmInput.value) || 1e9;
+  // ⚠️ usa l’API calculateTime, non calcTime
+    const sec = await window.api.calculateTime(currentFile, rpmMax);
     resultSpan.textContent = sec.toFixed(1);
-  });
+});
+
 });
 </script>
 <!--  ▲ FINE BLOCCO SCRIPT -->
