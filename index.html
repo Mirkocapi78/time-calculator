@@ -9,6 +9,16 @@
   <input type="number" id="rpmMax" value="4000" min="100" step="50">
 </label><br>
 
+<label>
+  Modalità macchina:
+  <select id="modeSelect">
+    <option value="lathe">Tornio</option>
+    <option value="mill">Centro di lavoro</option>
+  </select>
+</label>
+<br>
+<!-- poi rimane il tuo openBtn e calcBtn -->
+
 <button id="openBtn">Apri file ISO</button>
 <p id="filePath"></p>
 <button id="calcBtn" disabled>Calcola Tempo</button>
