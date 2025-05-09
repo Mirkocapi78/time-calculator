@@ -1,34 +1,57 @@
+<!DOCTYPE html>
+<html lang="it">
+<head> … </head>
+<body>
+  <h1>Time Calculator CNC</h1>
+
+<label>
+  Giri mandrino MAX (solo per torni):
+  <input type="number" id="rpmMax" value="4000" min="100" step="50">
+</label><br>
+
+<label>
+  Modalità macchina:
+  <select id="modeSelect">
+    <option value="lathe">Tornio</option>
+    <option value="mill">Centro di lavoro</option>
+  </select>
+</label>
+<br>
+<!-- poi rimane il tuo openBtn e calcBtn -->
+
+<button id="openBtn">Apri file ISO</button>
+<p id="filePath"></p>
+<button id="calcBtn" disabled>Calcola Tempo</button>
+<h2>Tempo stimato: <span id="result">--</span> s</h2>
+
+<!--  ▼ QUESTO È IL BLOCCO <script>  -->
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  const openBtn    = document.getElementById('openBtn');
-  const calcBtn    = document.getElementById('calcBtn');
-  const filePathP  = document.getElementById('filePath');
-  const resultSpan = document.getElementById('result');
-  const rpmInput   = document.getElementById('rpmMax');
-  const modeSelect = document.getElementById('modeSelect');
-
+  const openBtn   = document.getElementById('openBtn');
+  const calcBtn   = document.getElementById('calcBtn');
+  const filePathP = document.getElementById('filePath');
+  const resultSpan= document.getElementById('result');
+  const rpmInput  = document.getElementById('rpmMax');   // ★ nuovo
   let currentFile = null;
 
   openBtn.addEventListener('click', async () => {
     const path = await window.api.selectFile();
     if (path) {
-      currentFile    = path;
+      currentFile = path;
       filePathP.textContent = path;
-      calcBtn.disabled      = false;
+      calcBtn.disabled = false;
     }
   });
 
   calcBtn.addEventListener('click', async () => {
     if (!currentFile) return;
-    // 1) Leggi il contenuto del file
-    const text    = await window.api.readFile(currentFile);
-    // 2) Prepara i parametri
-    const rpmMax  = parseFloat(rpmInput.value) || Infinity;
-    const mode    = modeSelect.value;           // 'lathe' o 'mill'
-    // 3) Chiedi al main di calcolare il tempo
-    const sec     = await window.api.calcTime({ text, mode, rpmMax });
-    // 4) Mostra il risultato
+    const rpmMax = parseFloat(rpmInput.value) || 1e9;    // ★ nuovo
+    const sec = await window.api.calcTime(currentFile, rpmMax);
     resultSpan.textContent = sec.toFixed(1);
   });
 });
 </script>
+<!--  ▲ FINE BLOCCO SCRIPT -->
+
+</body>
+</html>
