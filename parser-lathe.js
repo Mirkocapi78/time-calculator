@@ -146,52 +146,47 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-// Espansione avanzata G76
+let g76Count = 0;
+let g76StartZ = 0;
+let g76FinishDepth = 0;
+
+// ——— Gestione avanzata G76 ———
 if (c.code === 'G76') {
   g76Count++;
-  // feed in mm/min (G94/G95 già gestiti in feedRev e rpm)
-  const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
+
+  // feed in mm/min
+  const feedMMmin = (c.feedMode === 'G95')
+    ? feedRev * rpm
+    : feedRev;
 
   if (g76Count === 1) {
-    // Primo G76: passata singola lungo l’asse Z
-    const axialDist = Math.abs((c.Z ?? pos.Z) - pos.Z);
-    if (feedMMmin > 0) tMin += axialDist / feedMMmin;
+    // memorizza Z di partenza e profondità di finitura (Q1)
+    g76StartZ      = pos.Z;
+    g76FinishDepth = (c.Q ?? 0) / 1000;  // µm → mm
   }
- 
-// Espansione avanzata G76 (sostituire il blocco g76Count===2)
-else if (g76Count === 2) {
-  // Parametri
-  const startZ    = g76StartZ;                 // registrato al primo G76
-  const endZ      = c.Z ?? pos.Z;
-  const axialDist = Math.abs(endZ - startZ);   // mm
-  const pitch     = c.F ?? feedRev;            // mm/rev
-  const diameter  = c.X ?? (pos.X || 0);       // mm
-  const radius    = diameter / 2;              // mm
+  else if (g76Count === 2) {
+    // totale P e passo Q (µm → mm)
+    const totalDepth = (c.P ?? 0) / 1000;
+    const stepDepth  = (c.Q ?? 0) / 1000;
+    // calcola quante passate rough servono
+    const roughDepth   = Math.max(0, totalDepth - g76FinishDepth);
+    const roughPasses  = Math.ceil(roughDepth / stepDepth);
+    const passes       = roughPasses + 1;  // +1 per la finitura
 
-  // Numero di passate (P e Q in µm → mm)
-  const totalDepth = (c.P ?? 0) / 1000;        // mm
-  const stepDepth  = (c.Q ?? 0) / 1000;        // mm
-  const passes     = Math.ceil(totalDepth / stepDepth);
+    // corsa assiale
+    const axialDist = Math.abs((c.Z ?? pos.Z) - g76StartZ);
 
-  // Calcolo lunghezza elicoidale di una singola passata:
-  // turns = spostamento assiale / passo
-  const turns    = axialDist / pitch;
-  // lunghezza elica = sqrt(axial^2 + (circonferenza*turns)^2)
-  const circLen  = 2 * Math.PI * radius * turns;
-  const helixLen = Math.hypot(axialDist, circLen);
-
-  // Tempo totale per tutte le passate
-  // feedMMmin già definito sopra come:
-  //   const feedMMmin = (c.feedMode==='G95') ? feedRev*rpm : feedRev;
-  if (feedMMmin > 0) {
-    tMin += (helixLen * passes) / feedMMmin;
+    if (feedMMmin > 0) {
+      // tempo totale
+      tMin += (axialDist * passes) / feedMMmin;
+    }
   }
-}
 
-  // aggiorna Z
+  // aggiorna posizione Z
   pos.Z = c.Z ?? pos.Z;
   continue;
 }
+
     // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
