@@ -1,109 +1,40 @@
-// main.js
+// main.js  – processo principale Electron
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const fs = require('fs').promises;
-
-// parser-lathe.js ora in root
-const { parseISO: parseLathe, computeLatheTime }
-  = require(path.join(__dirname, 'parser-lathe.js'));
-
-// parser-mill.js in root
-const { parseISO: parseMill, expandProgram, computeMillTime }
-  = require(path.join(__dirname, 'parser-mill.js'));
-
-
-let mainWindow;
+const parser = require('./parser-lathe');
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'), // ← carica il bridge
       nodeIntegration: false,
+      contextIsolation: true
     }
   });
-
-
-// main.js (solo la createWindow aggiornata)
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    }
-  });
-
-  // ① Forza il caricamento di index.html
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
-
-  // ② Apri sempre le DevTools per vedere errori
-  mainWindow.webContents.openDevTools();
-
-  // ③ Logga eventuali fallimenti nel caricamento
-  mainWindow.webContents.on('did-fail-load', (e, errorCode, errorDesc, validatedURL) => {
-    console.error('❌ did-fail-load:', errorCode, errorDesc, validatedURL);
-  });
-}
-
-
-
-
-
-  
-
-  mainWindow.loadFile('index.html');
-  // mainWindow.webContents.openDevTools(); // se ti serve il DevTools
+  win.loadFile('index.html');
 }
 
 app.whenReady().then(createWindow);
 
-app.on('window-all-closed', () => {
-  // Su macOS è comune restare aperti finché l'utente non fa Cmd+Q
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  // Su macOS ricrea finestra quando clicchi sull'icona del dock
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-// --- IPC Handlers ---
-
-// 1) Apri finestra di dialogo per selezionare il file
-ipcMain.handle('show-open-dialog', async () => {
+/* ---- IPC: dialogo di apertura file ---- */
+ipcMain.handle('select-file', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [
-      { name: 'ISO / G-Code Files', extensions: ['iso','txt','ngc','nc'] },
-      { name: 'All Files', extensions: ['*'] }
+      { name: 'ISO CNC Files', extensions: ['txt', 'iso', 'm', 'cnc'] }
     ]
   });
-  if (canceled || filePaths.length === 0) return null;
+  if (canceled) return null;
   return filePaths[0];
 });
 
-// 2) Leggi il contenuto del file come testo
-ipcMain.handle('read-file', async (event, filePath) => {
-  return await fs.readFile(filePath, 'utf-8');
-});
-
-// 3) Calcola il tempo in base alla modalità
-ipcMain.handle('calc-time', async (event, { text, mode, rpmMax }) => {
-  if (mode === 'lathe') {
-    // Tornio
-    const cmds = parseLathe(text);
-    const seconds = computeLatheTime(cmds, rpmMax);
-    return seconds;
-  } else {
-    // Centro di lavoro
-    const raw      = parseMill(text);
-    const expanded = expandProgram(raw);
-    const seconds  = computeMillTime(expanded);
-    return seconds;
-  }
+/* ---- IPC: calcolo tempo ---- */
+ipcMain.handle('calculate-time', async (event, { path, rpmMax }) => {
+  const fs = require('fs');
+  const content = fs.readFileSync(path, 'utf8');
+  const cmds = parser.parseISO(content);
+  const sec  = parser.computeLatheTime(cmds, rpmMax);
+  return sec;
 });
