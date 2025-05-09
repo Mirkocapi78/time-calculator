@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + calcolo combinato asse C per G1
+// parser-lathe.js – parser completo + calcolo combinato asse C per G1 e filettatura G76 avanzata
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -13,7 +13,7 @@ function parseISO(text) {
     let effectiveCode = state.code;
 
     // Movimenti modali G0–G4
-    if (/^G0?0$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
+    if (/^G00$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
       effectiveCode = token0
         .replace(/^G00$/, 'G0')
         .replace(/^G01$/, 'G1')
@@ -28,19 +28,20 @@ function parseISO(text) {
       state.feedMode = token0;
       parts.shift();
     }
-    // RPM limits e threading cycle G26/G50/G92/G76
+    // RPM limits G26/G50/G92 and threading cycle G76
     else if (/^(?:G26|G50|G92|G76)$/i.test(token0)) {
-      effectiveCode = token0;   // ora cmd.code sarà "G76"
-      parts.shift();            // togliamo il token G76 dai parametri
+      effectiveCode = token0;
+      parts.shift();
     }
-
     // Cutting speed G96
     else if (/^G96$/.test(token0)) {
       effectiveCode = 'G96';
+      parts.shift();
     }
     // Constant RPM G97/M3
-    else if (/^G97$|^M0?3$/.test(token0)) {
+    else if (/^G97$|^M03$|^M3$/.test(token0)) {
       effectiveCode = 'G97';
+      parts.shift();
     }
     // Dwell G4/G04
     if (/^G04$/.test(token0)) {
@@ -49,13 +50,13 @@ function parseISO(text) {
       parts.shift();
     }
     // C-axis ON (modalità fresatura)
-    if (/^M3?[45]$/.test(token0)) {
+    if (/^M34$|^M35$/.test(token0)) {
       state.cAxis = true;
       effectiveCode = 'M34';
       parts.shift();
     }
     // Spindle OFF disabilita C-axis
-    if (/^M0?5$/.test(token0)) {
+    if (/^M05$|^M5$/.test(token0)) {
       state.cAxis = false;
       effectiveCode = 'M5';
       parts.shift();
@@ -110,11 +111,11 @@ function computeLatheTime(cmds, userMax = Infinity) {
   let tMin = 0;
   let cActive = false;
 
-  // ——— Variabili per G76 ———
+  // Variabili per gestione G76
   let g76Count       = 0;
   let g76StartZ      = 0;
   let g76FinishDepth = 0;
-  
+
   for (const c of cmds) {
     // Modal updates
     if (c.F != null) feedRev = c.F;
@@ -127,7 +128,7 @@ function computeLatheTime(cmds, userMax = Infinity) {
     // Skip tool change
     if (c.L) continue;
 
-    // Dwell
+    // Dwell G4
     if (c.code === 'G4') {
       const sec = c.X ?? c.F ?? c.P ?? 0;
       tMin += sec / 60;
@@ -135,12 +136,11 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // Rapid moves
+    // Rapid moves G0
     if (c.code === 'G0') {
-      const dr   = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz   = (c.Z ?? pos.Z) - pos.Z;
-      let dist  = Math.hypot(dr, dz);
-      // include C-axis rapid
+      const dr = ((c.X ?? pos.X) - pos.X) / 2;
+      const dz = (c.Z ?? pos.Z) - pos.Z;
+      let dist = Math.hypot(dr, dz);
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
         const dCdeg  = c.C - pos.C;
@@ -153,49 +153,35 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-// ——— Gestione avanzata G76 ———
-if (c.code === 'G76') {
-  g76Count++;
+    // Threading cycle G76
+    if (c.code === 'G76') {
+      g76Count++;
+      const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
 
-  // feed in mm/min
-  const feedMMmin = (c.feedMode === 'G95')
-    ? feedRev * rpm
-    : feedRev;
-
-  if (g76Count === 1) {
-    // memorizza Z di partenza e profondità di finitura (Q1)
-    g76StartZ      = pos.Z;
-    g76FinishDepth = (c.Q ?? 0) / 1000;  // µm → mm
-  }
-  else if (g76Count === 2) {
-    // totale P e passo Q (µm → mm)
-    const totalDepth = (c.P ?? 0) / 1000;
-    const stepDepth  = (c.Q ?? 0) / 1000;
-    // calcola quante passate rough servono
-    const roughDepth   = Math.max(0, totalDepth - g76FinishDepth);
-    const roughPasses  = Math.ceil(roughDepth / stepDepth);
-    const passes       = roughPasses + 1;  // +1 per la finitura
-
-    // corsa assiale
-    const axialDist = Math.abs((c.Z ?? pos.Z) - g76StartZ);
-
-    if (feedMMmin > 0) {
-      // tempo totale
-      tMin += (axialDist * passes) / feedMMmin;
+      if (g76Count === 1) {
+        g76StartZ      = pos.Z;
+        g76FinishDepth = (c.Q ?? 0) / 1000;
+      }
+      else if (g76Count === 2) {
+        const totalDepth = (c.P ?? 0) / 1000;
+        const stepDepth  = (c.Q ?? 0) / 1000;
+        const roughDepth = Math.max(0, totalDepth - g76FinishDepth);
+        const roughPasses= Math.ceil(roughDepth / stepDepth);
+        const passes     = roughPasses + 1;
+        const axialDist  = Math.abs((c.Z ?? pos.Z) - g76StartZ);
+        if (feedMMmin > 0) {
+          tMin += (axialDist * passes) / feedMMmin;
+        }
+      }
+      pos.Z = c.Z ?? pos.Z;
+      continue;
     }
-  }
-
-  // aggiorna posizione Z
-  pos.Z = c.Z ?? pos.Z;
-  continue;
-}
 
     // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
     let dist = 0;
     if (c.code === 'G1') {
-      // combine radial, axial, and circumferential in one path
       let distC = 0;
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
