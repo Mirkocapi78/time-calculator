@@ -1,4 +1,4 @@
-// parser-lathe.js – parser completo + calcolo combinato asse C per G1
+// parser-lathe.js – parser completo + calcolo G0, G1/G2/G3, G4 e G76 avanzato
 
 /** 1) PARSE ISO → array di comandi normalizzati */
 function parseISO(text) {
@@ -13,7 +13,7 @@ function parseISO(text) {
     let effectiveCode = state.code;
 
     // Movimenti modali G0–G4
-    if (/^G0?0$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
+    if (/^G00$|^G0[1-4]$|^G[1-4]$/.test(token0)) {
       effectiveCode = token0
         .replace(/^G00$/, 'G0')
         .replace(/^G01$/, 'G1')
@@ -29,7 +29,7 @@ function parseISO(text) {
       parts.shift();
     }
     // RPM limits G26/G50/G92
-    else if (/^G2[692]$|^G50$/.test(token0)) {
+    else if (/^G26$|^G50$|^G92$/.test(token0)) {
       effectiveCode = token0;
     }
     // Cutting speed G96
@@ -37,7 +37,7 @@ function parseISO(text) {
       effectiveCode = 'G96';
     }
     // Constant RPM G97/M3
-    else if (/^G97$|^M0?3$/.test(token0)) {
+    else if (/^G97$|^M03$|^M3$/.test(token0)) {
       effectiveCode = 'G97';
     }
     // Dwell G4/G04
@@ -47,13 +47,13 @@ function parseISO(text) {
       parts.shift();
     }
     // C-axis ON (modalità fresatura)
-    if (/^M3?[45]$/.test(token0)) {
+    if (/^M34$|^M35$/.test(token0)) {
       state.cAxis = true;
       effectiveCode = 'M34';
       parts.shift();
     }
     // Spindle OFF disabilita C-axis
-    if (/^M0?5$/.test(token0)) {
+    if (/^M05$|^M5$/.test(token0)) {
       state.cAxis = false;
       effectiveCode = 'M5';
       parts.shift();
@@ -102,25 +102,30 @@ function arcLen(x0, z0, cmd) {
 /** 3) Calcolo tempo totale (in secondi) */
 function computeLatheTime(cmds, userMax = Infinity) {
   const RAPID = 10000;
-  let pos = { X: 0, Z: 0, C: 0 };
-  let feedRev = 0, rpm = 0, Vc = 0;
-  let rpmMax = Math.min(userMax, 4000);
-  let tMin = 0;
-  let cActive = false;
+  let pos       = { X: 0, Z: 0, C: 0 };
+  let feedRev   = 0, rpm = 0, Vc = 0;
+  let rpmMax    = Math.min(userMax, 4000);
+  let tMin      = 0;
+  let cActive   = false;
+  let g76Count  = 0;      // *** DICHIARAZIONE G76 ***
+  let g76StartZ = 0;      // *** DICHIARAZIONE G76 ***
 
   for (const c of cmds) {
     // Modal updates
     if (c.F != null) feedRev = c.F;
-    if (['G26','G50','G92'].includes(c.code) && c.S != null) rpmMax = Math.min(userMax, c.S);
-    if (c.code === 'G97' && c.S != null) rpm = Math.min(c.S, rpmMax);
-    if (c.code === 'G96' && c.S != null) Vc = c.S;
+    if (['G26','G50','G92'].includes(c.code) && c.S != null)
+      rpmMax = Math.min(userMax, c.S);
+    if (c.code === 'G97' && c.S != null)
+      rpm = Math.min(c.S, rpmMax);
+    if (c.code === 'G96' && c.S != null)
+      Vc = c.S;
     if (c.code === 'M34') cActive = true;
     if (c.code === 'M5')  cActive = false;
 
     // Skip tool change
     if (c.L) continue;
 
-    // Dwell
+    // Dwell G4
     if (c.code === 'G4') {
       const sec = c.X ?? c.F ?? c.P ?? 0;
       tMin += sec / 60;
@@ -128,11 +133,11 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // Rapid moves
+    // Rapid moves G0
     if (c.code === 'G0') {
-      const dr   = ((c.X ?? pos.X) - pos.X) / 2;
-      const dz   = (c.Z ?? pos.Z) - pos.Z;
-      let dist  = Math.hypot(dr, dz);
+      const dr = ((c.X ?? pos.X) - pos.X) / 2;
+      const dz = (c.Z ?? pos.Z) - pos.Z;
+      let dist = Math.hypot(dr, dz);
       // include C-axis rapid
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
@@ -146,58 +151,39 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-// Espansione avanzata G76
-if (c.code === 'G76') {
-  g76Count++;
-  // feed in mm/min (G94/G95 già gestiti in feedRev e rpm)
-  const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
+    // Espansione avanzata G76
+    if (c.code === 'G76') {
+      g76Count++;
+      // feed in mm/min
+      const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
 
-  if (g76Count === 1) {
-    // Primo G76: passata singola lungo l’asse Z
-    const axialDist = Math.abs((c.Z ?? pos.Z) - pos.Z);
-    if (feedMMmin > 0) tMin += axialDist / feedMMmin;
-  }
- 
-// Espansione avanzata G76 (sostituire il blocco g76Count===2)
-else if (g76Count === 2) {
-  // Parametri
-  const startZ    = g76StartZ;                 // registrato al primo G76
-  const endZ      = c.Z ?? pos.Z;
-  const axialDist = Math.abs(endZ - startZ);   // mm
-  const pitch     = c.F ?? feedRev;            // mm/rev
-  const diameter  = c.X ?? (pos.X || 0);       // mm
-  const radius    = diameter / 2;              // mm
+      if (g76Count === 1) {
+        // primo G76: registra Z di partenza e calcola 1ª passata
+        g76StartZ = pos.Z;
+        const axialDist = Math.abs((c.Z ?? pos.Z) - pos.Z);
+        if (feedMMmin > 0) tMin += axialDist / feedMMmin;
+      }
+      else if (g76Count === 2) {
+        // secondo G76: P profondità total (µm→mm), Q passo (µm→mm)
+        const endZ       = c.Z ?? pos.Z;
+        const axialDist  = Math.abs(endZ - g76StartZ);
+        const totalDepth = (c.P ?? 0) / 1000;
+        const stepDepth  = (c.Q ?? 0) / 1000;
+        const passes     = Math.ceil(totalDepth / stepDepth);
 
-  // Numero di passate (P e Q in µm → mm)
-  const totalDepth = (c.P ?? 0) / 1000;        // mm
-  const stepDepth  = (c.Q ?? 0) / 1000;        // mm
-  const passes     = Math.ceil(totalDepth / stepDepth);
+        if (feedMMmin > 0) {
+          tMin += (axialDist * passes) / feedMMmin;
+        }
+        pos.Z = endZ;
+      }
+      continue;
+    }
 
-  // Calcolo lunghezza elicoidale di una singola passata:
-  // turns = spostamento assiale / passo
-  const turns    = axialDist / pitch;
-  // lunghezza elica = sqrt(axial^2 + (circonferenza*turns)^2)
-  const circLen  = 2 * Math.PI * radius * turns;
-  const helixLen = Math.hypot(axialDist, circLen);
-
-  // Tempo totale per tutte le passate
-  // feedMMmin già definito sopra come:
-  //   const feedMMmin = (c.feedMode==='G95') ? feedRev*rpm : feedRev;
-  if (feedMMmin > 0) {
-    tMin += (helixLen * passes) / feedMMmin;
-  }
-}
-
-  // aggiorna Z
-  pos.Z = c.Z ?? pos.Z;
-  continue;
-}
     // Cutting moves G1, G2, G3
     let dr = ((c.X ?? pos.X) - pos.X) / 2;
     let dz = (c.Z ?? pos.Z) - pos.Z;
     let dist = 0;
     if (c.code === 'G1') {
-      // combine radial, axial, and circumferential in one path
       let distC = 0;
       if (cActive && c.C != null) {
         const radius = (c.X ?? pos.X) / 2;
@@ -206,7 +192,8 @@ else if (g76Count === 2) {
         pos.C        = c.C;
       }
       dist = Math.hypot(dr, dz, distC);
-    } else if (c.code === 'G2' || c.code === 'G3') {
+    }
+    else if (c.code === 'G2' || c.code === 'G3') {
       dist = arcLen(pos.X, pos.Z, c);
     }
     if (dist > 0) {
