@@ -28,10 +28,12 @@ function parseISO(text) {
       state.feedMode = token0;
       parts.shift();
     }
-    // RPM limits G26/G50/G92
-    else if (/^G2[692]$|^G50$/.test(token0)) {
-      effectiveCode = token0;
+    // RPM limits e threading cycle G26/G50/G92/G76
+    else if (/^(?:G26|G50|G92|G76)$/i.test(token0)) {
+      effectiveCode = token0;   // ora cmd.code sarà "G76"
+      parts.shift();            // togliamo il token G76 dai parametri
     }
+
     // Cutting speed G96
     else if (/^G96$/.test(token0)) {
       effectiveCode = 'G96';
