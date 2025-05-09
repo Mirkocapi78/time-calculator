@@ -28,7 +28,7 @@ function parseISO(text) {
       state.feedMode = token0;
       parts.shift();
     }
-    // RPM limits G26/G50/G92 and threading cycle G76
+    // RPM limits e threading cycle G26/G50/G92/G76
     else if (/^(?:G26|G50|G92|G76)$/i.test(token0)) {
       effectiveCode = token0;
       parts.shift();
@@ -62,13 +62,8 @@ function parseISO(text) {
       parts.shift();
     }
 
-    const cmd = {
-      code:     effectiveCode,
-      feedMode: state.feedMode,
-      X: null, Z: null, I: null, K: null,
-      F: null, S: null, P: null, L: null,
-      C: null
-    };
+   const cmd = { code: effectiveCode, feedMode: state.feedMode, X: null, Z: null, I: null, K: null, F: null, S: null, P: null, Q: null, L: null, C: null };
+    
     for (const p of parts) {
       const k = p[0], v = parseFloat(p.slice(1));
       if (isNaN(v)) continue;
@@ -153,28 +148,26 @@ function computeLatheTime(cmds, userMax = Infinity) {
       continue;
     }
 
-    // Threading cycle G76
+    
+  // G76 threading cycle
     if (c.code === 'G76') {
-      g76Count++;
-      const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
-
-      if (g76Count === 1) {
-        g76StartZ      = pos.Z;
-        g76FinishDepth = (c.Q ?? 0) / 1000;
-      }
-      else if (g76Count === 2) {
-        const totalDepth = (c.P ?? 0) / 1000;
-        const stepDepth  = (c.Q ?? 0) / 1000;
-        const roughDepth = Math.max(0, totalDepth - g76FinishDepth);
-        const roughPasses= Math.ceil(roughDepth / stepDepth);
-        const passes     = roughPasses + 1;
-        const axialDist  = Math.abs((c.Z ?? pos.Z) - g76StartZ);
-        if (feedMMmin > 0) {
-          tMin += (axialDist * passes) / feedMMmin;
-        }
-      }
-      pos.Z = c.Z ?? pos.Z;
-      continue;
+    g76Count++;
+    const feedMMmin = (c.feedMode === 'G95') ? feedRev * rpm : feedRev;
+    if (feedMMmin <= 0) console.warn('⚠️ G76 senza feed!', feedRev, rpm);
+    if (g76Count === 1) {
+      g76StartZ = pos.Z;
+      g76FinishDepth = (c.Q ?? 0) / 1000;
+    } else if (g76Count === 2) {
+      const totalDepth = (c.P ?? 0) / 1000;
+      const stepDepth = (c.Q ?? 0) / 1000;
+      const roughDepth = Math.max(0, totalDepth - g76FinishDepth);
+      const roughPasses = Math.ceil(roughDepth / stepDepth);
+      const passes = roughPasses + 1;
+      const axialDist = Math.abs((c.Z ?? pos.Z) - g76StartZ);
+      if (feedMMmin > 0) tMin += (axialDist * passes) / feedMMmin;
+    }
+    pos.Z = c.Z ?? pos.Z;
+    continue;
     }
 
     // Cutting moves G1, G2, G3
