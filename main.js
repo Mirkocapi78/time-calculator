@@ -3,8 +3,6 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
-const path = require('path');
-
 // parser-lathe.js ora in root
 const { parseISO: parseLathe, computeLatheTime }
   = require(path.join(__dirname, 'parser-lathe.js'));
