@@ -3,18 +3,16 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
-// Import parser-tornio
-const {
-  parseISO: parseLathe,
-  computeLatheTime
-} = require(path.join(__dirname, 'lib', 'parser-lathe.js'));
+const path = require('path');
 
-// Import parser-centro di lavoro
-const {
-  parseISO: parseMill,
-  expandProgram,
-  computeMillTime
-} = require(path.join(__dirname, 'lib', 'parser-mill.js'));
+// parser-lathe.js ora in root
+const { parseISO: parseLathe, computeLatheTime }
+  = require(path.join(__dirname, 'parser-lathe.js'));
+
+// parser-mill.js in root
+const { parseISO: parseMill, expandProgram, computeMillTime }
+  = require(path.join(__dirname, 'parser-mill.js'));
+
 
 let mainWindow;
 
