@@ -25,6 +25,37 @@ function createWindow() {
     }
   });
 
+
+// main.js (solo la createWindow aggiornata)
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  // ① Forza il caricamento di index.html
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // ② Apri sempre le DevTools per vedere errori
+  mainWindow.webContents.openDevTools();
+
+  // ③ Logga eventuali fallimenti nel caricamento
+  mainWindow.webContents.on('did-fail-load', (e, errorCode, errorDesc, validatedURL) => {
+    console.error('❌ did-fail-load:', errorCode, errorDesc, validatedURL);
+  });
+}
+
+
+
+
+
+  
+
   mainWindow.loadFile('index.html');
   // mainWindow.webContents.openDevTools(); // se ti serve il DevTools
 }
