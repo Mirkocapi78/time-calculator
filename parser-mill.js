@@ -7,6 +7,8 @@ function parseISO(text) {
   const raw = [];
   for (let line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
+     // → togliamo il prefisso N123 o n123
+    line = line.trim().replace(/^[Nn]\d+\s*/, '');
 
     // 1.a) Se è un MCALL CYCLE…(<params>), catturalo tutto compreso di parentesi
     const m = line.match(/MCALL\s+CYCLE\d+\s*\([^)]+\)/i);
