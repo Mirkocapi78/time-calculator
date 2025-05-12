@@ -140,7 +140,7 @@ function expandProgram(raw) {
       }
 
       // X… Y… subito dopo MCALL → espandi foratura
-      const m2 = line.match(/^X([-\d.]+)\s+Y([-\d.]+)/i);
+      const m2 = line.match(/X([-\d.]+)\s+Y([-\d.]+)/i);
       if (cycleParams && m2) {
         const x = parseFloat(m2[1]);
         const y = parseFloat(m2[2]);
