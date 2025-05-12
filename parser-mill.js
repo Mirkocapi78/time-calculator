@@ -8,7 +8,7 @@ function parseISO(text) {
   for (let line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
      // → togliamo il prefisso N123 o n123
-    line = line.trim().replace(/^[Nn]\d+\s*/, '');
+   l line = line.trim().repace(/^[Nn]\d+\s*/, '');
 
     // 1.a) Se è un MCALL CYCLE…(<params>), catturalo tutto compreso di parentesi
     const m = line.match(/MCALL\s+CYCLE\d+\s*\([^)]+\)/i);
@@ -19,6 +19,7 @@ function parseISO(text) {
 
     // 1.b) altrimenti rimuovi solo tutto ciò che sta dopo ';' (commenti)
     line = line.split(';')[0].trim();
+    line = line.replace(/^[NO]\d+\s*/i, '');
     if (!line) continue;
 
     // Label
