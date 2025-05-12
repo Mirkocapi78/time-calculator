@@ -1,7 +1,16 @@
 // main.js  – processo principale Electron
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const parser = require('./parser-lathe');
+const {
+ parseISO:   parseLathe,
+  computeLatheTime
+} = require('./parser-lathe');
+
+const {
+  parseISO:   parseMill,
+  expandProgram,
+  computeMillTime
+} = require('./parser-mill');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -31,10 +40,23 @@ ipcMain.handle('select-file', async () => {
 });
 
 /* ---- IPC: calcolo tempo ---- */
-ipcMain.handle('calculate-time', async (event, { path, rpmMax }) => {
+ipcMain.handle('calculate-time', async (event, { path, mode, rpmMax }) => {
   const fs = require('fs');
   const content = fs.readFileSync(path, 'utf8');
-  const cmds = parser.parseISO(content);
-  const sec  = parser.computeLatheTime(cmds, rpmMax);
-  return sec;
+
+  if (mode === 'lathe') {
+    // Tornio
+    const cmds = parseLathe(content);
+    return computeLatheTime(cmds, rpmMax);
+  }
+  else if (mode === 'mill') {
+    // Centro di lavoro
+    const rawLines = parseMill(content);
+    const cmds     = expandProgram(rawLines);
+    return computeMillTime(cmds);
+  }
+  else {
+    throw new Error(`Modalità sconosciuta: ${mode}`);
+  }
 });
+
