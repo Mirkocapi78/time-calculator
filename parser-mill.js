@@ -133,7 +133,7 @@ function expandProgram(raw) {
         commands.push(`G0 Z${plane + safety}`);
         commands.push(`G1 Z${depth}`);
         commands.push(`G0 Z${approach}`);
-
+        cycleParams = null;    // ⬅️ resetto subito, così lo espando solo una volta
         i++; continue;
       }
 
