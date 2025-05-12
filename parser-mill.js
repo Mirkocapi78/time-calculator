@@ -7,7 +7,7 @@ function parseISO(text) {
   const raw = [];
   for (const rawLine of text.split(/\r?\n/)) {
     // 1.a) rimuovo tutto dopo ';' (commenti)
-    let line = rawLine.split(';')[0];
+    let line = rawLine.split(/;|\(/)[0];
     // 1.b) tolgo eventuale prefisso N123 o O123
     line = line.replace(/^[NO]\d+\s*/i, '').trim();
     // 1.c) se è vuota, salto
@@ -109,7 +109,7 @@ function expandProgram(raw) {
       const line = r.line;
 
       // MCALL CYCLE…(a,b,c,d,…)
-      const m1 = line.match(/^MCALL\s+CYCLE\d+\s*\(\s*([^)]+)\)/i);
+      const m1 = line.match(/^(?:MCALL\s+)?CYCLE\d+\s*\(\s*([^)]+)\)/i);
       if (m1) {
         const p = m1[1].split(',').map(v => parseFloat(v) || 0);
         cycleParams = {
@@ -170,12 +170,24 @@ function computeMillTime(cmdLines) {
     const args  = {};
 
     // estraggo parametri
-    for (let j = 1; j < parts.length; j++) {
-      const p = parts[j];
-      const k = p[0].toUpperCase();
-      const v = parseFloat(p.slice(1));
-      if (!isNaN(v)) args[k] = v;
+  for (let j = 1; j < parts.length; j++) {
+    const p = parts[j];
+
+    // ——— Punto 2: riconoscimento I=AC(...) e J=AC(...) ———
+    const acMatch = /^([IJ])=AC\(([-\d.]+)\)$/i.exec(p);
+    if (acMatch) {
+      // acMatch[1] è "I" o "J", acMatch[2] è il numero dentro la parentesi
+      args[acMatch[1]] = parseFloat(acMatch[2]);
+      continue;
     }
+    // ————————————————————————————————————————————————
+
+    // il parsing normale per tutti gli altri parametri
+    const k = p[0].toUpperCase();
+    const v = parseFloat(p.slice(1));
+    if (!isNaN(v)) args[k] = v;
+  }
+
 
     // aggiorno feed se presente
     if (args.F != null) feed = args.F;
@@ -185,8 +197,8 @@ function computeMillTime(cmdLines) {
       const dx = (args.X ?? pos.X) - pos.X;
       const dy = (args.Y ?? pos.Y) - pos.Y;
       const dz = (args.Z ?? pos.Z) - pos.Z;
-      const d  = Math.hypot(dx, dy, dz);
-      tMin += d / RAPID;
+      const d = Math.max(Math.abs(dx),Math.abs(dy),Math.abs(dz));
+      tMin += d/RAPID;
       pos = { ...pos, X: args.X ?? pos.X, Y: args.Y ?? pos.Y, Z: args.Z ?? pos.Z };
       continue;
     }
