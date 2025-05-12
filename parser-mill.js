@@ -5,19 +5,27 @@
  */
 function parseISO(text) {
   const raw = [];
-  for (let line of text.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-     // → togliamo il prefisso N123 o n123
-   l line = line.trim().repace(/^[Nn]\d+\s*/, '');
+  for (const rawLine of text.split(/\r?\n/)) {
+    // 1) taglio i commenti (tutto dopo ‘;’)
+    let line = rawLine.split(';')[0];
+    // 2) tolgo il prefisso N123 o O123 e ripulisco spazi
+    line = line.replace(/^[NO]\d+\s*/i, '').trim();
+    // 3) se dopo tutto è vuota, salto
+    if (!line) continue;
 
-    // 1.a) Se è un MCALL CYCLE…(<params>), catturalo tutto compreso di parentesi
+    // …qui riprende il tuo parsing dei comandi…
+    // es: riconoscimento MCALL, label, assign, command, ecc.
     const m = line.match(/MCALL\s+CYCLE\d+\s*\([^)]+\)/i);
     if (m) {
-      raw.push({ type: 'command', line: m[0].trim() });
+      raw.push({ type: 'command', line: m[0] });
       continue;
     }
+    // …
+  }
+  return raw;
+}
 
-    // 1.b) altrimenti rimuovi solo tutto ciò che sta dopo ';' (commenti)
+   // 1.b) altrimenti rimuovi solo tutto ciò che sta dopo ';' (commenti)
     line = line.split(';')[0].trim();
     line = line.replace(/^[NO]\d+\s*/i, '');
     if (!line) continue;
