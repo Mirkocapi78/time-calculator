@@ -189,7 +189,10 @@ function computeMillTime(cmdLines) {
       const v = parseFloat(p.slice(1));
       if (!isNaN(v)) args[k] = v;
     }
-
+     if (args.F != null) {
+       feed = args.F;
+     }
+    
     if (code==='G0'||code==='G00') {
       const dx = (args.X??pos.X)-pos.X;
       const dy = (args.Y??pos.Y)-pos.Y;
@@ -204,7 +207,6 @@ function computeMillTime(cmdLines) {
       const dy = (args.Y??pos.Y)-pos.Y;
       const dz = (args.Z??pos.Z)-pos.Z;
       const d  = Math.hypot(dx,dy,dz);
-      feed = args.F??feed;
       if (feed>0) tMin += d/feed;
       pos.X = args.X??pos.X; pos.Y = args.Y??pos.Y; pos.Z = args.Z??pos.Z;
       continue;
