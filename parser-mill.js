@@ -159,6 +159,19 @@ function expandProgram(raw) {
  * 3) computeMillTime → secondi totali
  */
 function computeMillTime(cmdLines) {
+
+
+  
+
+// ← Qui inizia il body di computeMillTime
+  console.log('--- computeMillTime inizio, righe da processare:', cmdLines.length);
+  cmdLines.forEach((l, i) => {
+    console.log(`  [${i}] ${l}`);
+  });
+
+
+
+  
   const RAPID = 10000; // mm/min
   let pos = { X: 0, Y: 0, Z: 0, B: 0 };
   let feed = 0;
