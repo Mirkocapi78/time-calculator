@@ -1,74 +1,153 @@
-// parser-mill.js – parser per centro di lavoro con drill‐cycles Siemens
+// parser-mill.js – parser per centro di lavoro con drill‑cycles Siemens e conteggio tempi G0/G1/G2/G3/G4/B
 
 /**
- * 1) parseISO → array di stringhe G-code “pulite”
+ * 1) parseISO(text): trasforma il testo ISO in un array di oggetti { type, ... }
  */
 function parseISO(text) {
-  const lines = [];
+  const raw = [];
   for (let rawLine of text.split(/\r?\n/)) {
-    // rimuovi commenti ( ; oppure ( ... ) )
-    let line = rawLine.split(';')[0].replace(/\(.*?\)/g, '').trim();
-    // togli prefisso N123 o O123
+    // elimina commenti dopo ';' o '('
+    let line = rawLine.split(/;|\(/)[0].trim();
+    // rimuovi prefisso N123 o O123
     line = line.replace(/^[NO]\d+\s*/i, '').trim();
     if (!line) continue;
-    lines.push(line);
+
+    // etichetta: SBAVA2: o PASS_Z:
+    const lbl = line.match(/^([A-Z_]\w*):$/i);
+    if (lbl) {
+      raw.push({ type: 'label', name: lbl[1] });
+      continue;
+    }
+    // assignment var (es: R1=R1-0.25)
+    const asg = line.match(/^R(\d+)\s*=\s*(.+)$/i);
+    if (asg) {
+      raw.push({ type: 'assign', varName: 'R' + asg[1], expr: asg[2] });
+      continue;
+    }
+    // conditional IF ... GOTOB ...
+    const iff = line.match(/^IF\s+([Rr]\d+)\s*(>=|<=|==|>|<)\s*([\d.-]+)\s+GOTOB\s+([A-Z_]\w*)$/i);
+    if (iff) {
+      raw.push({
+        type:     'if',
+        varName:  iff[1].toUpperCase(),
+        operator: iff[2],
+        value:    parseFloat(iff[3]),
+        target:   iff[4]
+      });
+      continue;
+    }
+    // repeat loop: REPEAT SBAVA2 P=1
+    const rep = line.match(/^REPEAT\s+([A-Z_]\w*)\s+P=(\d+)/i);
+    if (rep) {
+      raw.push({ type: 'repeat', block: rep[1], count: parseInt(rep[2], 10) });
+      continue;
+    }
+    // MCALL CYCLExx(a,b,c,d)
+    const mc = line.match(/^MCALL\s+CYCLE(\d+)\s*\(([^)]+)\)/i);
+    if (mc) {
+      raw.push({
+        type:   'mcall',
+        cycle:  parseInt(mc[1],10),
+        params: mc[2].split(',').map(s => parseFloat(s)||0)
+      });
+      continue;
+    }
+    // qualsiasi altro G-code
+    raw.push({ type: 'command', line });
   }
-  return lines;
+  return raw;
 }
 
 /**
- * 2) expandProgram → array di stringhe G-code espanse
- *    - gestisce drill-cycles Siemens (MCALL CYCLExx)
- *    - risolve REPEAT ... P=... / ENDLABEL
+ * 2) expandProgram(raw): risolve label/assign/if/repeat e espande drill‑cycles
+ *    restituisce array di stringhe G-code pronte per il calcolo tempo
  */
-function expandProgram(rawLines) {
+function expandProgram(raw) {
   const labels = {};
-  const raw = [];
+  raw.forEach((r, i) => { if (r.type === 'label') labels[r.name] = i; });
 
-  // prima passata: cattura etichette
-  rawLines.forEach((l, i) => {
-    const m = l.match(/^([A-Z_]\w*):$/i);
-    if (m) labels[m[1]] = i;
-    raw.push(l);
-  });
-
+  const vars     = {};
   const commands = [];
-  const vars = {};
+  let i = 0;
   let cycleParams = null;
 
-  for (let i = 0; i < raw.length; i++) {
-    const line = raw[i];
+  while (i < raw.length) {
+    const r = raw[i];
+    switch(r.type) {
+      case 'label':
+        i++; break;
+      case 'assign': {
+        const expr = r.expr.replace(/R(\d+)/g, (_,n)=> vars['R'+n]||0);
+        // eslint-disable-next-line no-eval
+        vars[r.varName] = eval(expr);
+        i++; break;
+      }
+      case 'if': {
+        const v = vars[r.varName]||0;
+        let ok = false;
+        switch(r.operator) {
+          case '>=': ok = v>=r.value; break;
+          case '<=': ok = v<=r.value; break;
+          case '==': ok = v===r.value;break;
+          case '>':  ok = v> r.value; break;
+          case '<':  ok = v< r.value; break;
+        }
+        i = ok ? (labels[r.target]||i+1) : i+1;
+        break;
+      }
+      case 'repeat': {
+        const start = labels[r.block];
+        const end   = labels['ENDLABEL']|| raw.length;
+        for (let k=0;k<r.count;k++) {
+          for (let j=start;j<end;j++) {
+            if (raw[j].type==='command')
+              commands.push(raw[j].line);
+          }
+        }
+        i++; break;
+      }
+      case 'mcall':
+        // inizio nuovo drill-cycle, resetto params
+        cycleParams = {
+          approach: r.params[0],
+          plane:    r.params[1],
+          safety:   r.params[2],
+          depth:    r.params[3]
+        };
+        i++; break;
 
-    // drill-cycle
-    let m = line.match(/^MCALL\s+CYCLE\d+\s*\(\s*([^)]+)\)/i);
-    if (m) {
-      const [a, b, c, d] = m[1].split(',').map(v => parseFloat(v) || 0);
-      cycleParams = { approach: a, plane: b, safety: c, depth: d };
-      continue;
+      case 'command': {
+        const line = r.line;
+        // se sto in un ciclo e trovo X.. Y.. allora espando il ciclo
+        const m2 = line.match(/^X([-\d.]+)\s+Y([-\d.]+)/i);
+        if (cycleParams && m2) {
+          const x = parseFloat(m2[1]), y = parseFloat(m2[2]);
+          // 1) rapido Z approccio
+          commands.push(`G0 Z${cycleParams.approach}`);
+          // 2) rapido XY
+          commands.push(`G0 X${x} Y${y}`);
+          // 3) rapido a plane+safety
+          commands.push(`G0 Z${cycleParams.plane + cycleParams.safety}`);
+          // 4) foratura in G1 a depth
+          commands.push(`G1 Z${cycleParams.depth}`);
+          // 5) ritorno rapido a approccio
+          commands.push(`G0 Z${cycleParams.approach}`);
+          i++; break;
+        }
+        // altrimenti emetto la riga com'è
+        commands.push(line);
+        i++; break;
+      }
+      default:
+        i++; break;
     }
-    // dopo MCALL, righe X... Y... → espandi drill
-    m = line.match(/^X([-\d.]+)\s+Y([-\d.]+)/i);
-    if (cycleParams && m) {
-      const x = parseFloat(m[1]), y = parseFloat(m[2]);
-      const { approach, plane, safety, depth } = cycleParams;
-      commands.push(`G0 Z${approach}`);
-      commands.push(`G0 X${x} Y${y}`);
-      commands.push(`G0 Z${plane + safety}`);
-      commands.push(`G1 Z${depth}`);
-      commands.push(`G0 Z${approach}`);
-      continue;
-    }
-    // IGNORA etichette e empty
-    if (/^[A-Z_]\w*:$/.test(line)) continue;
-    // tutto il resto è G-code
-    commands.push(line);
   }
 
   return commands;
 }
 
 /**
- * 3) computeMillTime → totale in secondi
+ * 3) computeMillTime(cmdLines): calcola secondi totali gestendo G0/G1/G2/G3/G4/B
  */
 function computeMillTime(cmdLines) {
   const RAPID = 10000; // mm/min
@@ -76,81 +155,60 @@ function computeMillTime(cmdLines) {
   let feed = 0;
   let tMin = 0;
 
-  for (const line of cmdLines) {
-    const parts = line.trim().split(/\s+/);
+  for (let line of cmdLines) {
+    const parts = line.split(/\s+/);
     const code  = parts[0].toUpperCase();
     const args  = {};
-
-    // raccogli parametri numerici
-    for (let i=1; i<parts.length; i++) {
-      const p = parts[i], k = p[0].toUpperCase(), v = parseFloat(p.slice(1));
+    for (let j=1;j<parts.length;j++) {
+      const p = parts[j], k = p[0].toUpperCase(), v = parseFloat(p.slice(1));
       if (!isNaN(v)) args[k] = v;
     }
-    // aggiorna feed
-    if (args.F != null) feed = args.F;
+    if (args.F!=null) feed = args.F;
 
-    // G0 rapido
-    if (code === 'G0' || code === 'G00') {
-      const dx = (args.X ?? pos.X) - pos.X;
-      const dy = (args.Y ?? pos.Y) - pos.Y;
-      const dz = (args.Z ?? pos.Z) - pos.Z;
-      const d  = Math.hypot(dx, dy, dz);
-      tMin += d / RAPID;
-      pos.X = args.X ?? pos.X;
-      pos.Y = args.Y ?? pos.Y;
-      pos.Z = args.Z ?? pos.Z;
-      continue;
+    let delta = 0;
+    if (code==='G0'||code==='G00') {
+      const dx=(args.X??pos.X)-pos.X;
+      const dy=(args.Y??pos.Y)-pos.Y;
+      const dz=(args.Z??pos.Z)-pos.Z;
+      const d = Math.hypot(dx,dy,dz);
+      delta = d / RAPID;
+      pos = { X: args.X??pos.X, Y: args.Y??pos.Y, Z: args.Z??pos.Z, B:pos.B };
     }
-
-    // G1 avanzamento lineare
-    if (code === 'G1' || code === 'G01') {
-      const dx = (args.X ?? pos.X) - pos.X;
-      const dy = (args.Y ?? pos.Y) - pos.Y;
-      const dz = (args.Z ?? pos.Z) - pos.Z;
-      const d  = Math.hypot(dx, dy, dz);
-      if (feed > 0) tMin += d / feed;
-      pos.X = args.X ?? pos.X;
-      pos.Y = args.Y ?? pos.Y;
-      pos.Z = args.Z ?? pos.Z;
-      continue;
+    else if (code==='G1'||code==='G01') {
+      const dx=(args.X??pos.X)-pos.X;
+      const dy=(args.Y??pos.Y)-pos.Y;
+      const dz=(args.Z??pos.Z)-pos.Z;
+      const d  = Math.hypot(dx,dy,dz);
+      if (feed>0) delta = d / feed;
+      pos = { X: args.X??pos.X, Y: args.Y??pos.Y, Z: args.Z??pos.Z, B:pos.B };
     }
-
-    // G2/G3 circolare in XY (ignora Z)
-    if (code === 'G2' || code === 'G3') {
-      const x0 = pos.X, y0 = pos.Y;
-      const xc = (args.I ?? 0) + x0, yc = (args.J ?? 0) + y0;
-      const r  = Math.hypot(x0 - xc, y0 - yc);
-      const x1 = args.X ?? pos.X, y1 = args.Y ?? pos.Y;
-      let dθ   = Math.atan2(y1 - yc, x1 - xc) - Math.atan2(y0 - yc, x0 - xc);
-      if (code==='G2' && dθ>0) dθ -= 2*Math.PI;
-      if (code==='G3' && dθ<0) dθ += 2*Math.PI;
-      const arc = Math.abs(r * dθ);
-      if (feed > 0) tMin += arc / feed;
-      pos.X = x1;
-      pos.Y = y1;
-      continue;
+    else if (code==='G2'||code==='G3') {
+      // arco in XY (ignora Z)
+      const x0=pos.X, y0=pos.Y;
+      const xc=(args.I||0)+x0, yc=(args.J||0)+y0;
+      const r = Math.hypot(x0-xc,y0-yc);
+      const x1=args.X??x0, y1=args.Y??y0;
+      let dθ = Math.atan2(y1-yc,x1-xc)-Math.atan2(y0-yc,x0-xc);
+      if (code==='G2'&&dθ>0) dθ-=2*Math.PI;
+      if (code==='G3'&&dθ<0) dθ+=2*Math.PI;
+      const arc = Math.abs(r*dθ);
+      if (feed>0) delta = arc / feed;
+      pos.X = x1; pos.Y = y1;
     }
-
-    // G4 dwell (P in secondi)
-    if (code === 'G4' || code === 'G04') {
-      const sec = args.P ?? 0;
-      tMin += sec / 60;
-      continue;
+    else if (code==='G4'||code==='G04') {
+      delta = (args.P||0)/60;
     }
-
-    // rotazione asse B (360° in 12s → 30°/s)
-    if (args.B != null) {
-      let delta = ((args.B - pos.B + 180) % 360) - 180;
-      delta = Math.abs(delta);
-      tMin += (delta / 30) / 60;
+    else if (args.B!=null) {
+      let db = ((args.B-pos.B+180)%360)-180;
+      db = Math.abs(db);
+      delta = (db/30)/60;
       pos.B = args.B;
-      continue;
     }
 
-    // tutti gli altri M‐code o comandi li ignoriamo
+    tMin += delta;
   }
 
-  return tMin * 60; // ritorna secondi
+  return tMin * 60; // secondi
 }
 
 module.exports = { parseISO, expandProgram, computeMillTime };
