@@ -56,7 +56,6 @@ function expandProgram(rawLines) {
       commands.push(`G0 Z${plane + safety}`);
       commands.push(`G1 Z${depth}`);
       commands.push(`G0 Z${approach}`);
-      cycleParams = null; // ciclo eseguito
       continue;
     }
     // IGNORA etichette e empty
