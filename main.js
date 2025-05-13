@@ -56,7 +56,14 @@ ipcMain.handle('calculate-time', async (_, { path, mode, rpmMax }) => {
     // ← qui entra il nuovo parser‐mill
     const rawLines = parseMill(text);
     const cmds     = expandProgram(rawLines);
+   
+    console.log('––– RAW LINES:', rawLines.length, rawLines);
+    console.log('––– EXPANDED CMDS:', cmds.length, cmds);
+   
     const secs     = computeMillTime(cmds);
+
+    console.log('––– CALCULATED SECS:', secs);
+   
     return secs;
   }
   else {
