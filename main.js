@@ -23,9 +23,11 @@ function createWindow() {
     }
   });
   win.loadFile('index.html');
+ 
+   // Aggiungi questa riga per far partire le DevTools
+  win.webContents.openDevTools({ mode: 'bottom' });
 }
 
-app.commandLine.appendSwitch('enable-logging');
 
 
 app.whenReady().then(createWindow);
