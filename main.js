@@ -25,6 +25,9 @@ function createWindow() {
   win.loadFile('index.html');
 }
 
+app.commandLine.appendSwitch('enable-logging');
+
+
 app.whenReady().then(createWindow);
 
 /* ---- IPC: dialogo di apertura file ---- */
