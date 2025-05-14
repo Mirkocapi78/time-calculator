@@ -9,11 +9,18 @@ function parseISO(text) {
   const raw = [];
   for (let rawLine of text.split(/\r?\n/)) {
     // 1.a) rimuovi commenti
-    let line = rawLine.split(/;|\(/)[0].trim();
+    let line = rawLine.split(';')[0].trim();
     // 1.b) ignora prefisso N123 o O123
     line = line.replace(/^[NO]\d+\s*/i, '').trim();
     if (!line) continue;
 
+//    così non perdiamo mai i parametri del ciclo
+    if (!/^MCALL\s+CYCLE/i.test(line)) {
+      // questo cancella TUTTO ciò che sta fra '(' e ')'
+      line = line.replace(/\([^)]*\)/g, '').trim();
+      if (!line) continue;
+  
+    
     // label: PASS_Z: o SBAVA2:
     const lbl = line.match(/^([A-Z_]\w*):$/i);
     if (lbl) {
