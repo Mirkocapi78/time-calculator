@@ -93,15 +93,16 @@ function expandProgram(raw) {
         i++; break;
       case 'command':
         const line=r.line;
-        // inizio drill-cycle
-        let m1=line.match(/^MCALL\s+CYCLE(8[1-6])\s*\(([^)]+)\)/i);
+  
+       // inizio drill-cycle (solo CYCLE81–CYCLE89)
+        let m1 = line.match(/^MCALL\s+CYCLE8[1-9]\s*\(\s*([^)]+)\)/i);
         if(m1) {
           const parts=m1[2].split(',').map(v=>parseFloat(v)||0);
           cycle={ approach:parts[0], plane:parts[1], safety:parts[2], depth:parts[3] };
           i++; break;
         }
-        // fine drill-cycle (solo MCALL senza parentesi)
-        if(/^MCALL\s*$/i.test(line)) {
+       // fine drill-cycle: match esatto di “MCALL” senza alcun CYCLE
+      if (/^MCALL\s*$/i.test(line)) {
           cycle=null;
           i++; break;
         }
