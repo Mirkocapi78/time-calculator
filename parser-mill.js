@@ -13,12 +13,6 @@ function parseISO(text) {
     // 1.b) ignora prefisso N123 o O123
     line = line.replace(/^[NO]\d+\s*/i, '').trim();
     if (!line) continue;
-
-//    così non perdiamo mai i parametri del ciclo
-    if (!/^MCALL\s+CYCLE/i.test(line)) {
-      // questo cancella TUTTO ciò che sta fra '(' e ')'
-      line = line.replace(/\([^)]*\)/g, '').trim();
-      if (!line) continue;
   
     
     // label: PASS_Z: o SBAVA2:
