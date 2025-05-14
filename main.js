@@ -41,22 +41,24 @@ ipcMain.handle('select-file', async () => {
   return filePaths[0];
 });
 
+
+
+
 /* ---- IPC: calcolo tempo ---- */
-ipcMain.handle('calculate-time', async (_, { path, mode, rpmMax }) => {
+ipcMain.handle('calculate-time', async (_, { path, rpmMax, mode }) => {
   const fs   = require('fs');
   const text = fs.readFileSync(path, 'utf8');
 
   if (mode === 'lathe') {
-    // → rimane come prima
-    const cmds = parseLathe(text);
+    const { parseISO, computeLatheTime } = require('./parser-lathe');
+    const cmds = parseISO(text);
     return computeLatheTime(cmds, rpmMax);
   }
   else if (mode === 'mill') {
-    // ← qui entra il nuovo parser‐mill
-    const rawLines = parseMill(text);
+    const { parseISO, expandProgram, computeMillTime } = require('./parser-mill');
+    const rawLines = parseISO(text);
     const cmds     = expandProgram(rawLines);
-    const secs     = computeMillTime(cmds);
-    return secs;
+    return computeMillTime(cmds);
   }
   else {
     throw new Error(`Modalità sconosciuta: ${mode}`);
