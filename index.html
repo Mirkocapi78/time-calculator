@@ -46,7 +46,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   calcBtn.addEventListener('click', async () => {
     if (!currentFile) return; 
-   const mode   = modeSelect.value;                // 'lathe' o 'mill'
+   const mode   = document.getElementById('modeSelect').value;
    const rpmMax = parseFloat(rpmInput.value) || 1e9;
    const sec    = await window.api.calculateTime(
      currentFile,
