@@ -44,19 +44,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  calcBtn.addEventListener('click', async () => {
-    if (!currentFile) return; 
-   const mode   = document.getElementById('modeSelect').value;
-   const rpmMax = parseFloat(rpmInput.value) || 1e9;
-   const sec    = await window.api.calculateTime(
-     currentFile,
-     mode,
-     rpmMax
-   );
-    resultSpan.textContent = sec.toFixed(1);
+calcBtn.addEventListener('click', async () => {
+  if (!currentFile) return;
+  const rpmMax = parseFloat(rpmInput.value) || 1e9;
+  const mode   = document.getElementById('modeSelect').value;   // prendi “lathe” o “mill”
+  const sec    = await window.api.calculateTime(currentFile, rpmMax, mode);
+  resultSpan.textContent = sec.toFixed(1);
 });
 
-});
 </script>
 <!--  ▲ FINE BLOCCO SCRIPT -->
 
