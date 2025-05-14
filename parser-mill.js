@@ -144,11 +144,11 @@ function expandProgram(raw) {
         // espandi la sequenza di foratura
         cmds.push(`G0 Z${cycle.approach}`);
         cmds.push(`G0 X${x} Y${y}`);
-        cmds.push(`G0 Z${cycle.plane + cycle.safety}`);
+        cmds.push(`G0 Z${cycle.plane}`);
         cmds.push(`G1 Z${cycle.depth}`);
         cmds.push(`G0 Z${cycle.approach}`);
         i++;
-        continue;
+        break;
       }
 
       // altrimenti emetti il G-code così com’è
